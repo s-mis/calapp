@@ -1,17 +1,9 @@
-export interface ServingSize {
-  id: number;
-  food_id: number;
-  name: string;
-  grams: number;
-  sort_order: number;
-  is_default: number;
-}
-
 export interface Food {
   id: number;
   name: string;
   brand: string | null;
   unit: 'g' | 'ml';
+  // Macros (per 100g/100ml)
   calories: number | null;
   protein: number | null;
   carbs: number | null;
@@ -21,6 +13,7 @@ export interface Food {
   saturated_fat: number | null;
   trans_fat: number | null;
   cholesterol: number | null;
+  // Micros (per 100g/100ml)
   sodium: number | null;
   potassium: number | null;
   calcium: number | null;
@@ -37,17 +30,28 @@ export interface Food {
   zinc: number | null;
   phosphorus: number | null;
   barcode: string | null;
+  // Meta
   created_at: string;
-  serving_sizes: ServingSize[];
 }
 
-export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack';
+export interface ServingSize {
+  id: number;
+  food_id: number;
+  name: string;
+  grams: number;
+  sort_order: number;
+  is_default: number;
+}
+
+export interface FoodWithServingSizes extends Food {
+  serving_sizes: ServingSize[];
+}
 
 export interface FoodLog {
   id: number;
   food_id: number;
   date: string;
-  meal_type: MealType;
+  meal_type: 'breakfast' | 'lunch' | 'dinner' | 'snack';
   serving_size_id: number | null;
   quantity: number;
   custom_grams: number | null;
@@ -67,19 +71,23 @@ export interface DailyTotals {
   fat: number;
   fiber: number;
   sugar: number;
+  saturated_fat: number;
+  trans_fat: number;
+  cholesterol: number;
+  sodium: number;
+  potassium: number;
+  calcium: number;
+  iron: number;
+  vitamin_a: number;
+  vitamin_c: number;
+  vitamin_d: number;
+  vitamin_e: number;
+  vitamin_k: number;
+  vitamin_b6: number;
+  vitamin_b12: number;
+  folate: number;
+  magnesium: number;
+  zinc: number;
+  phosphorus: number;
   entry_count: number;
-  [key: string]: number | string;
-}
-
-export interface WeeklyReport {
-  startDate: string;
-  endDate: string;
-  days: DailyTotals[];
-}
-
-export interface MonthlyReport {
-  month: string;
-  startDate: string;
-  endDate: string;
-  days: DailyTotals[];
 }

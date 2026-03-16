@@ -1,120 +1,76 @@
-import axios from 'axios';
-import type {
-  Food,
-  FoodCreate,
-  Recipe,
-  RecipeCreate,
-  FoodLog,
-  FoodLogCreate,
-  DailySummary,
-  ExternalFood,
-} from '../types';
+import { Food, FoodLogWithFood, FoodLog, DailyTotals, WeeklyReport, MonthlyReport } from '../types';
 
-const api = axios.create({
-  baseURL: '/api',
-  headers: {
-    'Content-Type': 'application/json',
-  },
-});
+const BASE_URL = '/api';
 
-// Foods API
-export const foodsApi = {
-  list: async (params?: { search?: string; custom_only?: boolean; favorites_only?: boolean }) => {
-    const { data } = await api.get<Food[]>('/foods', { params });
-    return data;
-  },
+async function request<T>(url: string, options?: RequestInit): Promise<T> {
+  const res = await fetch(`${BASE_URL}${url}`, {
+    headers: { 'Content-Type': 'application/json' },
+    ...options,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error || res.statusText);
+  }
+  if (res.status === 204) return undefined as T;
+  return res.json();
+}
 
-  get: async (id: number) => {
-    const { data } = await api.get<Food>(`/foods/${id}`);
-    return data;
-  },
-
-  create: async (food: FoodCreate) => {
-    const { data } = await api.post<Food>('/foods', food);
-    return data;
-  },
-
-  update: async (id: number, food: Partial<FoodCreate>) => {
-    const { data } = await api.put<Food>(`/foods/${id}`, food);
-    return data;
-  },
-
-  delete: async (id: number) => {
-    await api.delete(`/foods/${id}`);
-  },
+// Foods
+export const getFoods = (search?: string, barcode?: string) => {
+  const params = new URLSearchParams();
+  if (barcode) params.set('barcode', barcode);
+  else if (search) params.set('search', search);
+  const qs = params.toString();
+  return request<Food[]>(`/foods${qs ? `?${qs}` : ''}`);
 };
 
-// Recipes API
-export const recipesApi = {
-  list: async (params?: { search?: string }) => {
-    const { data } = await api.get<Recipe[]>('/recipes', { params });
-    return data;
-  },
+export const getFood = (id: number) =>
+  request<Food>(`/foods/${id}`);
 
-  get: async (id: number) => {
-    const { data } = await api.get<Recipe>(`/recipes/${id}`);
-    return data;
-  },
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const createFood = (food: Record<string, any>) =>
+  request<Food>('/foods', { method: 'POST', body: JSON.stringify(food) });
 
-  create: async (recipe: RecipeCreate) => {
-    const { data } = await api.post<Recipe>('/recipes', recipe);
-    return data;
-  },
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const updateFood = (id: number, food: Record<string, any>) =>
+  request<Food>(`/foods/${id}`, { method: 'PUT', body: JSON.stringify(food) });
 
-  update: async (id: number, recipe: Partial<RecipeCreate>) => {
-    const { data } = await api.put<Recipe>(`/recipes/${id}`, recipe);
-    return data;
-  },
+export const deleteFood = (id: number) =>
+  request<void>(`/foods/${id}`, { method: 'DELETE' });
 
-  delete: async (id: number) => {
-    await api.delete(`/recipes/${id}`);
-  },
-};
+// Food Logs
+export const getLogs = (date: string) =>
+  request<FoodLogWithFood[]>(`/logs?date=${date}`);
 
-// Food Logs API
-export const logsApi = {
-  list: async (date: string, meal_type?: string) => {
-    const { data } = await api.get<FoodLog[]>('/logs', {
-      params: { log_date: date, meal_type },
-    });
-    return data;
-  },
+export const createLog = (log: {
+  food_id: number;
+  date: string;
+  meal_type: string;
+  serving_size_id?: number | null;
+  quantity: number;
+  custom_grams?: number | null;
+}) =>
+  request<FoodLog>('/logs', { method: 'POST', body: JSON.stringify(log) });
 
-  getSummary: async (date: string) => {
-    const { data } = await api.get<DailySummary>('/logs/summary', {
-      params: { log_date: date },
-    });
-    return data;
-  },
+export const updateLog = (id: number, log: Partial<FoodLog>) =>
+  request<FoodLog>(`/logs/${id}`, { method: 'PUT', body: JSON.stringify(log) });
 
-  create: async (log: FoodLogCreate) => {
-    const { data } = await api.post<FoodLog>('/logs', log);
-    return data;
-  },
+export const deleteLog = (id: number) =>
+  request<void>(`/logs/${id}`, { method: 'DELETE' });
 
-  update: async (id: number, log: Partial<FoodLogCreate>) => {
-    const { data } = await api.put<FoodLog>(`/logs/${id}`, log);
-    return data;
-  },
+// Reports
+export const getDailyReport = (date: string) =>
+  request<DailyTotals>(`/reports/daily?date=${date}`);
 
-  delete: async (id: number) => {
-    await api.delete(`/logs/${id}`);
-  },
-};
+export const getWeeklyReport = (date: string) =>
+  request<WeeklyReport>(`/reports/weekly?date=${date}`);
 
-// Nutrition (external search) API
-export const nutritionApi = {
-  search: async (query: string, source: 'openfoodfacts' | 'usda' = 'openfoodfacts') => {
-    const { data } = await api.get<ExternalFood[]>('/nutrition/search', {
-      params: { q: query, source },
-    });
-    return data;
-  },
+export const getMonthlyReport = (month: string) =>
+  request<MonthlyReport>(`/reports/monthly?month=${month}`);
 
-  lookupBarcode: async (barcode: string) => {
-    const { data } = await api.get<ExternalFood>(`/nutrition/barcode/${barcode}`);
-    return data;
-  },
-};
+// Settings
+export const getSettings = () =>
+  request<Record<string, string>>('/settings');
 
-export default api;
+export const updateSetting = (key: string, value: string) =>
+  request<{ key: string; value: string }>(`/settings/${key}`, { method: 'PUT', body: JSON.stringify({ value }) });
