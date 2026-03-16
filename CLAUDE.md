@@ -3,72 +3,86 @@
 ## Quick Reference
 
 ```bash
-npm run dev          # Start both backend (port 3001) and frontend (port 5173)
-npm run dev:backend  # Backend only
-npm run dev:frontend # Frontend only
-npm run build        # Production build (frontend)
+npm run dev    # Start Next.js dev server (port 3000)
+npm run build  # Production build
+npm run start  # Start production server
 ```
 
 ## Project Structure
 
 ```
 calapp/
-├── backend/           # Express + TypeScript + SQLite
-│   └── src/
-│       ├── index.ts   # Server entry, middleware, route mounting
-│       ├── db.ts      # SQLite connection (better-sqlite3), schema init
-│       ├── types.ts   # Shared TypeScript interfaces
-│       └── routes/
-│           ├── foods.ts    # GET/POST/PUT/DELETE /api/foods
-│           ├── logs.ts     # GET/POST/PUT/DELETE /api/logs
-│           └── reports.ts  # GET /api/reports/daily|weekly|monthly
-├── frontend/          # React + TypeScript + Vite + MUI v6
-│   └── src/
-│       ├── main.tsx          # React root, providers
-│       ├── App.tsx           # Router setup
-│       ├── theme.ts          # MUI theme config
-│       ├── services/api.ts   # All API calls (fetch-based)
-│       ├── types/index.ts    # Frontend type definitions
-│       ├── components/
-│       │   ├── Layout.tsx         # AppBar + bottom navigation shell
-│       │   ├── AddFoodDialog.tsx  # Food create/edit dialog
-│       │   └── FoodLogEntry.tsx   # Single log entry card
-│       └── pages/
-│           ├── Dashboard.tsx  # Today's summary, macro cards, recent entries
-│           ├── FoodLog.tsx    # Date-based log with meal grouping
-│           ├── Foods.tsx      # Food CRUD with search
-│           └── Reports.tsx    # Charts (recharts) - daily/weekly/monthly
-└── package.json       # Root scripts using concurrently
+├── app/
+│   ├── layout.tsx              # Root: <html>, ThemeRegistry, AuthProvider
+│   ├── ThemeRegistry.tsx       # MUI Emotion cache for App Router
+│   ├── manifest.ts             # PWA manifest
+│   ├── login/
+│   │   └── page.tsx            # Google sign-in
+│   ├── (app)/                  # Authenticated route group
+│   │   ├── layout.tsx          # Auth guard + FabProvider + Layout shell
+│   │   ├── page.tsx            # Dashboard
+│   │   ├── log/page.tsx        # FoodLog
+│   │   ├── foods/page.tsx      # Foods
+│   │   └── reports/page.tsx    # Reports
+│   └── api/
+│       ├── health/route.ts
+│       ├── foods/route.ts              # GET, POST
+│       ├── foods/[id]/route.ts         # GET, PUT, DELETE
+│       ├── logs/route.ts               # GET, POST
+│       ├── logs/[id]/route.ts          # PUT, DELETE
+│       ├── reports/daily/route.ts
+│       ├── reports/weekly/route.ts
+│       ├── reports/monthly/route.ts
+│       ├── settings/route.ts           # GET
+│       └── settings/[key]/route.ts     # PUT
+├── components/                 # Layout, AddFoodDialog, FoodLogEntry, BarcodeScannerModal
+├── context/                    # AuthContext, FabContext
+├── lib/
+│   ├── supabase/
+│   │   ├── client.ts           # Browser Supabase client (NEXT_PUBLIC_ vars)
+│   │   └── server.ts           # Server Supabase client
+│   ├── auth.ts                 # validateAuth() for API routes
+│   ├── reports.ts              # computeTotals(), zeroTotals()
+│   └── foods.ts                # getFoodWithServingSizes()
+├── services/api.ts             # Frontend fetch wrapper with auth token
+├── types/index.ts              # Unified types
+├── utils/openFoodFacts.ts      # Barcode lookup
+├── public/                     # favicon.svg, icons
+├── middleware.ts               # Security headers
+├── next.config.ts              # PWA plugin
+└── package.json
 ```
 
 ## Tech Stack
 
-- **Backend**: Node.js, Express, TypeScript, better-sqlite3
-- **Frontend**: React 19, TypeScript, Vite 6, Material UI 6, react-router-dom 7, recharts
-- **PWA**: vite-plugin-pwa (workbox, manifest, service worker)
-- **Dev tools**: tsx (backend dev runner), concurrently (parallel dev scripts)
+- **Framework**: Next.js 15 (App Router), TypeScript
+- **UI**: React 19, Material UI 6, recharts
+- **Auth & DB**: Supabase (PostgreSQL + Auth with Google OAuth)
+- **PWA**: @ducanh2912/next-pwa (workbox, service worker)
 
 ## Architecture Notes
 
-- Single-user app, no authentication
-- SQLite database stored at `backend/calapp.db` (gitignored)
-- Vite dev server proxies `/api` → `http://localhost:3001` (configured in `vite.config.ts`)
-- All nutrient columns in the `foods` table are nullable — users fill in what they know
+- Google OAuth via Supabase Auth; JWT validated server-side in API routes
+- Supabase PostgreSQL database (schema in `supabase-schema.sql` — keep a copy for reference)
+- All pages are `'use client'` components (stateful with hooks)
+- API routes use `validateAuth()` from `lib/auth.ts` to verify Bearer tokens
+- All nutrient columns in the `foods` table are nullable
 - Food log entries reference foods via `food_id` FK with CASCADE delete
-- Reports endpoints fill in zero-value days for missing dates in weekly/monthly views
+- Reports endpoints fill in zero-value days for missing dates
 - MUI Grid: use `Grid2` import (`@mui/material/Grid2`), not the deprecated `Grid`
 
 ## Database Schema
 
-Two tables: `foods` (nutritional data) and `food_logs` (daily entries). See `backend/src/db.ts` for full schema. Key points:
+Four tables: `foods`, `serving_sizes`, `food_logs`, `settings`. Key points:
 - `food_logs.meal_type` is constrained to: breakfast, lunch, dinner, snack
-- `food_logs.servings` is a REAL multiplier (default 1)
+- `food_logs.quantity` is a REAL multiplier (default 1)
 - `food_logs.date` uses YYYY-MM-DD format
+- `serving_sizes` linked to foods via `food_id` FK with CASCADE delete
 
 ## Code Conventions
 
-- Backend uses CommonJS module resolution (tsconfig `module: "commonjs"`)
-- Frontend uses ESNext modules (Vite bundler resolution)
-- API client in `frontend/src/services/api.ts` — all endpoints go through the `request<T>()` helper
-- MUI components are imported from individual paths (e.g., `@mui/material/Button`, not `{ Button } from '@mui/material'`)
+- All modules use ESNext (Next.js bundler resolution)
+- Path aliases: `@/*` maps to root (e.g., `@/types`, `@/lib/auth`)
+- API client in `services/api.ts` — all endpoints go through the `request<T>()` helper
+- MUI components are imported from individual paths (e.g., `@mui/material/Button`)
 - No test framework is set up yet
