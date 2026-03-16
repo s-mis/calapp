@@ -21,9 +21,6 @@
     "react-dom": "^19.0.0",
     "recharts": "^2.15.1"
   },
-  "engines": {
-    "node": "20.x"
-  },
   "devDependencies": {
     "@ducanh2912/next-pwa": "^10.2.9",
     "@types/node": "^22.15.0",
