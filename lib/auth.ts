@@ -8,7 +8,7 @@ export async function validateAuth(request: NextRequest) {
   }
 
   const token = authHeader.slice(7);
-  const supabase = getServerSupabase();
+  const supabase = getServerSupabase(token);
   const { data: { user }, error } = await supabase.auth.getUser(token);
 
   if (error || !user) {

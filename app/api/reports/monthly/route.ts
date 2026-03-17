@@ -6,7 +6,7 @@ import type { DailyTotals } from '@/types';
 export async function GET(request: NextRequest) {
   const auth = await validateAuth(request);
   if ('error' in auth) return auth.error;
-  const { supabase } = auth;
+  const { user, supabase } = auth;
 
   const month = request.nextUrl.searchParams.get('month');
   if (!month) {
@@ -21,6 +21,7 @@ export async function GET(request: NextRequest) {
   const { data: logs, error } = await supabase
     .from('food_logs')
     .select('*, foods(*), serving_sizes(*)')
+    .eq('user_id', user.id)
     .gte('date', startDate)
     .lte('date', endDate);
 

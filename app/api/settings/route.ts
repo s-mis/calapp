@@ -5,9 +5,9 @@ import { validateAuth } from '@/lib/auth';
 export async function GET(request: NextRequest) {
   const auth = await validateAuth(request);
   if ('error' in auth) return auth.error;
-  const { supabase } = auth;
+  const { user, supabase } = auth;
 
-  const { data, error } = await supabase.from('settings').select('key, value');
+  const { data, error } = await supabase.from('settings').select('key, value').eq('user_id', user.id);
   if (error) {
     console.error('Error fetching settings:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

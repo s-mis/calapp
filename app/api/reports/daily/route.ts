@@ -5,7 +5,7 @@ import { computeTotals } from '@/lib/reports';
 export async function GET(request: NextRequest) {
   const auth = await validateAuth(request);
   if ('error' in auth) return auth.error;
-  const { supabase } = auth;
+  const { user, supabase } = auth;
 
   const date = request.nextUrl.searchParams.get('date');
   if (!date) {
@@ -15,6 +15,7 @@ export async function GET(request: NextRequest) {
   const { data: logs, error } = await supabase
     .from('food_logs')
     .select('*, foods(*), serving_sizes(*)')
+    .eq('user_id', user.id)
     .eq('date', date);
 
   if (error) {

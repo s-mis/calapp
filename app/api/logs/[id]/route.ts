@@ -8,7 +8,7 @@ export async function PUT(
 ) {
   const auth = await validateAuth(request);
   if ('error' in auth) return auth.error;
-  const { supabase } = auth;
+  const { user, supabase } = auth;
 
   const { id } = await params;
 
@@ -16,6 +16,7 @@ export async function PUT(
     .from('food_logs')
     .select('*')
     .eq('id', id)
+    .eq('user_id', user.id)
     .single();
 
   if (!existing) {
@@ -41,6 +42,7 @@ export async function PUT(
       custom_grams: custom_grams !== undefined ? (custom_grams ?? null) : existing.custom_grams,
     })
     .eq('id', id)
+    .eq('user_id', user.id)
     .select()
     .single();
 
@@ -59,7 +61,7 @@ export async function DELETE(
 ) {
   const auth = await validateAuth(request);
   if ('error' in auth) return auth.error;
-  const { supabase } = auth;
+  const { user, supabase } = auth;
 
   const { id } = await params;
 
@@ -67,13 +69,14 @@ export async function DELETE(
     .from('food_logs')
     .select('id')
     .eq('id', id)
+    .eq('user_id', user.id)
     .single();
 
   if (!existing) {
     return NextResponse.json({ error: 'Log entry not found' }, { status: 404 });
   }
 
-  const { error } = await supabase.from('food_logs').delete().eq('id', id);
+  const { error } = await supabase.from('food_logs').delete().eq('id', id).eq('user_id', user.id);
   if (error) {
     console.error('Error deleting log:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

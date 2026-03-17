@@ -8,7 +8,7 @@ const MEAL_ORDER: Record<string, number> = { breakfast: 1, lunch: 2, dinner: 3, 
 export async function GET(request: NextRequest) {
   const auth = await validateAuth(request);
   if ('error' in auth) return auth.error;
-  const { supabase } = auth;
+  const { user, supabase } = auth;
 
   const date = request.nextUrl.searchParams.get('date');
   if (!date) {
@@ -18,6 +18,7 @@ export async function GET(request: NextRequest) {
   const { data: logs, error } = await supabase
     .from('food_logs')
     .select('*, food:foods!inner(*), serving_size:serving_sizes(*)')
+    .eq('user_id', user.id)
     .eq('date', date)
     .order('created_at');
 
@@ -54,7 +55,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const auth = await validateAuth(request);
   if ('error' in auth) return auth.error;
-  const { supabase } = auth;
+  const { user, supabase } = auth;
 
   const body = await request.json();
   const { food_id, date, meal_type, serving_size_id, quantity, custom_grams } = body;
@@ -80,6 +81,7 @@ export async function POST(request: NextRequest) {
   const { data: log, error } = await supabase
     .from('food_logs')
     .insert({
+      user_id: user.id,
       food_id,
       date,
       meal_type,

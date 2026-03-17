@@ -8,7 +8,7 @@ export async function PUT(
 ) {
   const auth = await validateAuth(request);
   if ('error' in auth) return auth.error;
-  const { supabase } = auth;
+  const { user, supabase } = auth;
 
   const { key } = await params;
   const body = await request.json();
@@ -20,7 +20,7 @@ export async function PUT(
 
   const { error } = await supabase
     .from('settings')
-    .upsert({ key, value: String(value) });
+    .upsert({ user_id: user.id, key, value: String(value) });
 
   if (error) {
     console.error('Error updating setting:', error);
