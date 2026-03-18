@@ -19,7 +19,7 @@ import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import Checkbox from '@mui/material/Checkbox';
-import { getDailyReport, getLogs, getWeeklyReport, getSettings, updateSetting, deleteLog } from '@/services/api';
+import { getDashboard, updateSetting, deleteLog } from '@/services/api';
 import { DailyTotals, FoodLogWithFood, WeeklyReport } from '@/types';
 import FoodLogEntry from '@/components/FoodLogEntry';
 import {
@@ -111,13 +111,8 @@ export default function DashboardPage() {
   const [autoBalance, setAutoBalance] = useState(true);
 
   const loadData = async () => {
-    const [t, logs, weekly, settings] = await Promise.all([
-      getDailyReport(today()),
-      getLogs(today()),
-      getWeeklyReport(today()),
-      getSettings(),
-    ]);
-    setTotals(t);
+    const { daily, logs, weekly, settings } = await getDashboard(today());
+    setTotals(daily);
     setAllLogs(logs);
     setWeeklyReport(weekly);
     if (settings.calorie_goal) {
@@ -146,9 +141,11 @@ export default function DashboardPage() {
     loadData();
   };
 
+  const [goalSaving, setGoalSaving] = useState(false);
   const handleGoalSave = async () => {
     const calParsed = parseInt(goalInput, 10);
-    if (!calParsed || calParsed < 1) return;
+    if (!calParsed || calParsed < 1 || goalSaving) return;
+    setGoalSaving(true);
 
     let protGrams: number;
     let carbsGrams: number;
@@ -185,6 +182,7 @@ export default function DashboardPage() {
     if (carbsGrams > 0) setCarbsGoal(carbsGrams);
     if (fatGrams > 0) setFatGoal(fatGrams);
     setGoalDialogOpen(false);
+    setGoalSaving(false);
   };
 
   const recentLogs = useMemo(() => allLogs.slice(-5).reverse(), [allLogs]);
@@ -589,7 +587,7 @@ export default function DashboardPage() {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setGoalDialogOpen(false)}>Cancel</Button>
-          <Button variant="contained" onClick={handleGoalSave}>Save</Button>
+          <Button variant="contained" onClick={handleGoalSave} disabled={goalSaving}>Save</Button>
         </DialogActions>
       </Dialog>
 

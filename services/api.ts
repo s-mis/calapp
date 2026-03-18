@@ -1,11 +1,31 @@
 import { Food, FoodLogWithFood, FoodLog, DailyTotals, WeeklyReport, MonthlyReport, PaginatedResponse } from '@/types';
 import { supabase } from '@/lib/supabase/client';
 
-async function request<T>(url: string, options?: RequestInit): Promise<T> {
+// Cache the access token to avoid repeated getSession() calls
+let cachedToken: string | null = null;
+let tokenSetAt = 0;
+const TOKEN_CACHE_MS = 30_000; // refresh every 30s
+
+async function getToken(): Promise<string | null> {
+  const now = Date.now();
+  if (cachedToken && now - tokenSetAt < TOKEN_CACHE_MS) return cachedToken;
   const { data: { session } } = await supabase.auth.getSession();
+  cachedToken = session?.access_token ?? null;
+  tokenSetAt = now;
+  return cachedToken;
+}
+
+// Listen for auth changes to invalidate cache
+supabase.auth.onAuthStateChange((_event, session) => {
+  cachedToken = session?.access_token ?? null;
+  tokenSetAt = Date.now();
+});
+
+async function request<T>(url: string, options?: RequestInit): Promise<T> {
+  const token = await getToken();
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (session?.access_token) {
-    headers['Authorization'] = `Bearer ${session.access_token}`;
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
   }
   const res = await fetch(`/api${url}`, {
     headers,
@@ -67,6 +87,10 @@ export const deleteLog = (id: number) =>
 
 export const getRecentFoods = () =>
   request<Food[]>('/logs/recent-foods');
+
+// Dashboard (combined endpoint)
+export const getDashboard = (date: string) =>
+  request<{ daily: DailyTotals; logs: FoodLogWithFood[]; weekly: WeeklyReport; settings: Record<string, string> }>(`/dashboard?date=${date}`);
 
 // Reports
 export const getDailyReport = (date: string) =>

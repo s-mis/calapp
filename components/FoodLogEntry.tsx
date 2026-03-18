@@ -6,6 +6,7 @@ import CardContent from '@mui/material/CardContent';
 import Typography from '@mui/material/Typography';
 import Box from '@mui/material/Box';
 import Chip from '@mui/material/Chip';
+import IconButton from '@mui/material/IconButton';
 import DeleteIcon from '@mui/icons-material/Delete';
 import ReplayIcon from '@mui/icons-material/Replay';
 import { FoodLogWithFood } from '@/types';
@@ -32,7 +33,7 @@ export default function FoodLogEntry({ entry, onDelete, onLogAgain }: Props) {
     ? (entry.quantity !== 1 ? `${entry.quantity} x ${entry.serving_size.name}` : entry.serving_size.name)
     : `${effectiveGrams}${entry.food.unit}`;
 
-  // Swipe state
+  // Swipe state (touch devices)
   const [offsetX, setOffsetX] = useState(0);
   const [revealed, setRevealed] = useState(false);
   const touchRef = useRef<{ startX: number; startY: number; swiping: boolean } | null>(null);
@@ -46,14 +47,12 @@ export default function FoodLogEntry({ entry, onDelete, onLogAgain }: Props) {
     const dx = e.touches[0].clientX - touchRef.current.startX;
     const dy = e.touches[0].clientY - touchRef.current.startY;
 
-    // If vertical scroll is dominant, bail out
     if (!touchRef.current.swiping && Math.abs(dy) > Math.abs(dx)) {
       touchRef.current = null;
       return;
     }
     touchRef.current.swiping = true;
 
-    // Only allow left swipe (negative), clamp to max reveal width
     const clamped = Math.max(Math.min(dx, revealed ? 0 : 0), -140);
     setOffsetX(clamped);
   };
@@ -77,7 +76,7 @@ export default function FoodLogEntry({ entry, onDelete, onLogAgain }: Props) {
 
   return (
     <Box sx={{ position: 'relative', overflow: 'hidden', borderRadius: 2, mb: 1 }}>
-      {/* Action panel behind card */}
+      {/* Action panel behind card (swipe reveal for touch) */}
       <Box sx={{
         position: 'absolute',
         top: 0, right: 0, bottom: 0,
@@ -130,6 +129,7 @@ export default function FoodLogEntry({ entry, onDelete, onLogAgain }: Props) {
           transform: `translateX(${offsetX}px)`,
           transition: touchRef.current?.swiping ? 'none' : 'transform 0.25s ease',
           zIndex: 1,
+          '&:hover .entry-actions': { opacity: 1 },
         }}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
@@ -152,6 +152,27 @@ export default function FoodLogEntry({ entry, onDelete, onLogAgain }: Props) {
               <Chip label={`C: ${carbs}g`} size="small" variant="outlined" />
               <Chip label={`F: ${fat}g`} size="small" variant="outlined" />
             </Box>
+          </Box>
+          {/* Desktop action buttons - visible on hover */}
+          <Box
+            className="entry-actions"
+            sx={{
+              display: 'flex',
+              gap: 0.5,
+              ml: 1,
+              opacity: 0,
+              transition: 'opacity 0.15s',
+              '@media (pointer: coarse)': { display: 'none' },
+            }}
+          >
+            {onLogAgain && (
+              <IconButton size="small" onClick={() => onLogAgain(entry)} title="Log again" sx={{ color: '#00E5FF' }}>
+                <ReplayIcon fontSize="small" />
+              </IconButton>
+            )}
+            <IconButton size="small" onClick={() => onDelete(entry.id)} title="Delete" color="error">
+              <DeleteIcon fontSize="small" />
+            </IconButton>
           </Box>
         </CardContent>
       </Card>

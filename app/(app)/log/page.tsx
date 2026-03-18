@@ -80,6 +80,7 @@ export default function FoodLogPage() {
   const [scannerOpen, setScannerOpen] = useState(false);
   const [scanLoading, setScanLoading] = useState(false);
   const [snackbar, setSnackbar] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [autocompleteInput, setAutocompleteInput] = useState('');
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
 
@@ -185,34 +186,45 @@ export default function FoodLogPage() {
   const previewFat = ((selectedFood?.fat ?? 0) * previewMultiplier).toFixed(1);
 
   const handleAdd = async () => {
-    if (!selectedFood) return;
-    await createLog({
-      food_id: selectedFood.id,
-      date,
-      meal_type: mealType,
-      serving_size_id: isCustom ? null : (selectedServingSize?.id ?? null),
-      quantity: parseFloat(quantity) || 1,
-      custom_grams: isCustom ? (parseFloat(customGrams) || null) : null,
-    });
-    setDialogOpen(false);
-    loadLogs();
+    if (!selectedFood || saving) return;
+    setSaving(true);
+    try {
+      await createLog({
+        food_id: selectedFood.id,
+        date,
+        meal_type: mealType,
+        serving_size_id: isCustom ? null : (selectedServingSize?.id ?? null),
+        quantity: parseFloat(quantity) || 1,
+        custom_grams: isCustom ? (parseFloat(customGrams) || null) : null,
+      });
+      setDialogOpen(false);
+      loadLogs();
+    } finally {
+      setSaving(false);
+    }
   };
 
+  const actionBusy = useRef(false);
   const handleDelete = async (id: number) => {
-    await deleteLog(id);
-    loadLogs();
+    if (actionBusy.current) return;
+    actionBusy.current = true;
+    try { await deleteLog(id); loadLogs(); } finally { actionBusy.current = false; }
   };
 
   const handleLogAgain = async (entry: FoodLogWithFood) => {
-    await createLog({
-      food_id: entry.food_id,
-      date,
-      meal_type: mealType,
-      serving_size_id: entry.serving_size_id ?? null,
-      quantity: entry.quantity,
-      custom_grams: entry.custom_grams ?? null,
-    });
-    loadLogs();
+    if (actionBusy.current) return;
+    actionBusy.current = true;
+    try {
+      await createLog({
+        food_id: entry.food_id,
+        date,
+        meal_type: mealType,
+        serving_size_id: entry.serving_size_id ?? null,
+        quantity: entry.quantity,
+        custom_grams: entry.custom_grams ?? null,
+      });
+      loadLogs();
+    } finally { actionBusy.current = false; }
   };
 
   const handleNewFoodSave = async (foodData: FoodSaveData) => {
@@ -493,7 +505,7 @@ export default function FoodLogPage() {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setDialogOpen(false)}>Cancel</Button>
-          <Button onClick={handleAdd} variant="contained" disabled={!selectedFood}>Add</Button>
+          <Button onClick={handleAdd} variant="contained" disabled={!selectedFood || saving}>Add</Button>
         </DialogActions>
       </Dialog>
     </Box>

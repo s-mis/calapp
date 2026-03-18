@@ -36,7 +36,7 @@ export type FoodSaveData = Omit<Partial<Food>, 'serving_sizes'> & {
 interface Props {
   open: boolean;
   onClose: () => void;
-  onSave: (food: FoodSaveData) => void;
+  onSave: (food: FoodSaveData) => void | Promise<void>;
   food?: Food | null;
   initialName?: string;
   prefill?: FoodSaveData | null;
@@ -83,6 +83,7 @@ export default function AddFoodDialog({ open, onClose, onSave, food, initialName
   const [form, setForm] = useState<FormState>(emptyForm);
   const [unit, setUnit] = useState<'g' | 'ml'>('g');
   const [servingSizes, setServingSizes] = useState<ServingSizeRow[]>([]);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (food?.id) {
@@ -189,7 +190,10 @@ export default function AddFoodDialog({ open, onClose, onSave, food, initialName
     setServingSizes(prev => prev.filter((_, i) => i !== index));
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
+    if (saving) return;
+    setSaving(true);
+    try {
     const sizes = servingSizes
       .filter(ss => ss.name.trim() && ss.grams)
       .map((ss, i) => ({
@@ -200,7 +204,7 @@ export default function AddFoodDialog({ open, onClose, onSave, food, initialName
         is_default: ss.is_default ? 1 as const : 0 as const,
       }));
 
-    onSave({
+    await onSave({
       name: form.name,
       brand: form.brand || null,
       unit,
@@ -231,6 +235,9 @@ export default function AddFoodDialog({ open, onClose, onSave, food, initialName
       phosphorus: toNum(form.phosphorus),
       serving_sizes: sizes,
     });
+    } finally {
+      setSaving(false);
+    }
   };
 
   const numField = (label: string, field: keyof FormState, fieldUnit?: string) => (
@@ -375,7 +382,7 @@ export default function AddFoodDialog({ open, onClose, onSave, food, initialName
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Cancel</Button>
-        <Button onClick={handleSubmit} variant="contained" disabled={!form.name.trim()}>
+        <Button onClick={handleSubmit} variant="contained" disabled={!form.name.trim() || saving}>
           {food ? 'Update' : 'Add'}
         </Button>
       </DialogActions>
