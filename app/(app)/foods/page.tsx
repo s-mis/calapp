@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import TextField from '@mui/material/TextField';
@@ -16,6 +16,7 @@ import Card from '@mui/material/Card';
 import InputAdornment from '@mui/material/InputAdornment';
 import SearchIcon from '@mui/icons-material/Search';
 import Snackbar from '@mui/material/Snackbar';
+import CircularProgress from '@mui/material/CircularProgress';
 import QrCodeScannerIcon from '@mui/icons-material/QrCodeScanner';
 import { getFoods, createFood, updateFood, deleteFood } from '@/services/api';
 import { Food } from '@/types';
@@ -23,22 +24,57 @@ import AddFoodDialog, { FoodSaveData } from '@/components/AddFoodDialog';
 import BarcodeScannerModal from '@/components/BarcodeScannerModal';
 import { fetchByBarcode } from '@/utils/openFoodFacts';
 
+const PAGE_SIZE = 50;
+
 export default function FoodsPage() {
   const { setFabAction } = useFab();
   const [foods, setFoods] = useState<Food[]>([]);
   const [search, setSearch] = useState('');
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingFood, setEditingFood] = useState<Food | null>(null);
   const [prefill, setPrefill] = useState<FoodSaveData | null>(null);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [snackbar, setSnackbar] = useState<string | null>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
 
-  const loadFoods = async () => {
-    const data = await getFoods(search || undefined);
-    setFoods(data);
+  const loadFoods = async (offset: number, append: boolean) => {
+    setLoading(true);
+    try {
+      const { data, total: t } = await getFoods(search || undefined, undefined, PAGE_SIZE, offset);
+      setFoods(prev => append ? [...prev, ...data] : data);
+      setTotal(t);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  useEffect(() => { loadFoods(); }, [search]);
+  // Reset when search changes
+  useEffect(() => {
+    setFoods([]);
+    setTotal(0);
+    loadFoods(0, false);
+  }, [search]);
+
+  // Infinite scroll via IntersectionObserver
+  const hasMore = foods.length < total;
+  const observerCallback = useCallback(
+    (entries: IntersectionObserverEntry[]) => {
+      if (entries[0].isIntersecting && hasMore && !loading) {
+        loadFoods(foods.length, true);
+      }
+    },
+    [hasMore, loading, foods.length, search],
+  );
+
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(observerCallback, { rootMargin: '200px' });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [observerCallback]);
 
   useEffect(() => {
     setFabAction(handleAdd);
@@ -54,7 +90,8 @@ export default function FoodsPage() {
     setDialogOpen(false);
     setEditingFood(null);
     setPrefill(null);
-    loadFoods();
+    setFoods([]);
+    loadFoods(0, false);
   };
 
   const handleEdit = (food: Food) => {
@@ -64,7 +101,7 @@ export default function FoodsPage() {
   };
 
   const handleBarcodeDetected = async (barcode: string) => {
-    const localMatches = await getFoods(undefined, barcode);
+    const { data: localMatches } = await getFoods(undefined, barcode);
     if (localMatches.length > 0) {
       setSnackbar('Already in your library');
       return;
@@ -82,7 +119,8 @@ export default function FoodsPage() {
 
   const handleDelete = async (id: number) => {
     await deleteFood(id);
-    loadFoods();
+    setFoods([]);
+    loadFoods(0, false);
   };
 
   const handleAdd = () => {
@@ -114,7 +152,7 @@ export default function FoodsPage() {
         </IconButton>
       </Box>
 
-      {foods.length === 0 && (
+      {foods.length === 0 && !loading && (
         <Typography color="text.secondary" sx={{ textAlign: 'center', mt: 4 }}>
           {search ? 'No foods found.' : 'No foods yet. Add your first food!'}
         </Typography>
@@ -145,6 +183,14 @@ export default function FoodsPage() {
           ))}
         </List>
       </Card>
+
+      {/* Scroll sentinel + loading spinner */}
+      <div ref={sentinelRef} />
+      {loading && (
+        <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}>
+          <CircularProgress size={28} />
+        </Box>
+      )}
 
       <AddFoodDialog
         open={dialogOpen}

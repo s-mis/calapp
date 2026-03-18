@@ -105,3 +105,8 @@ export interface MonthlyReport {
   endDate: string;
   days: DailyTotals[];
 }
+
+export interface PaginatedResponse<T> {
+  data: T[];
+  total: number;
+}

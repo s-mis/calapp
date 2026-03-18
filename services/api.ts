@@ -1,4 +1,4 @@
-import { Food, FoodLogWithFood, FoodLog, DailyTotals, WeeklyReport, MonthlyReport } from '@/types';
+import { Food, FoodLogWithFood, FoodLog, DailyTotals, WeeklyReport, MonthlyReport, PaginatedResponse } from '@/types';
 import { supabase } from '@/lib/supabase/client';
 
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
@@ -20,12 +20,14 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
 }
 
 // Foods
-export const getFoods = (search?: string, barcode?: string) => {
+export const getFoods = (search?: string, barcode?: string, limit?: number, offset?: number) => {
   const params = new URLSearchParams();
   if (barcode) params.set('barcode', barcode);
   else if (search) params.set('search', search);
+  if (limit != null) params.set('limit', String(limit));
+  if (offset != null) params.set('offset', String(offset));
   const qs = params.toString();
-  return request<Food[]>(`/foods${qs ? `?${qs}` : ''}`);
+  return request<PaginatedResponse<Food>>(`/foods${qs ? `?${qs}` : ''}`);
 };
 
 export const getFood = (id: number) =>

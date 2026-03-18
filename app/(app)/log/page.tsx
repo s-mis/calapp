@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import TextField from '@mui/material/TextField';
@@ -10,7 +10,7 @@ import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
 import MenuItem from '@mui/material/MenuItem';
-import Autocomplete, { createFilterOptions } from '@mui/material/Autocomplete';
+import Autocomplete from '@mui/material/Autocomplete';
 import IconButton from '@mui/material/IconButton';
 import Snackbar from '@mui/material/Snackbar';
 import CircularProgress from '@mui/material/CircularProgress';
@@ -27,7 +27,8 @@ import BarcodeScannerModal from '@/components/BarcodeScannerModal';
 import { fetchByBarcode } from '@/utils/openFoodFacts';
 
 type FoodOrCreate = Food | { _create: true; inputValue: string };
-const foodFilter = createFilterOptions<FoodOrCreate>();
+
+const PAGE_SIZE = 50;
 
 const today = () => {
   const d = new Date();
@@ -50,6 +51,7 @@ export default function FoodLogPage() {
   const [logs, setLogs] = useState<FoodLogWithFood[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [foods, setFoods] = useState<Food[]>([]);
+  const [foodsLoading, setFoodsLoading] = useState(false);
   const [selectedFood, setSelectedFood] = useState<Food | null>(null);
   const [mealType, setMealType] = useState<MealType>('lunch');
   const [quantity, setQuantity] = useState('1');
@@ -61,6 +63,8 @@ export default function FoodLogPage() {
   const [scannerOpen, setScannerOpen] = useState(false);
   const [scanLoading, setScanLoading] = useState(false);
   const [snackbar, setSnackbar] = useState<string | null>(null);
+  const [autocompleteInput, setAutocompleteInput] = useState('');
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
 
   const loadLogs = async () => {
     const data = await getLogs(date);
@@ -76,21 +80,40 @@ export default function FoodLogPage() {
 
   useEffect(() => {
     if (searchParams.get('openDialog') === 'true') {
-      // Remove the query param from the URL without navigation
       window.history.replaceState({}, document.title, '/log');
       openDialog();
     }
   }, []);
 
+  const loadFoodsForAutocomplete = useCallback(async (search?: string) => {
+    setFoodsLoading(true);
+    try {
+      const { data } = await getFoods(search || undefined, undefined, PAGE_SIZE, 0);
+      setFoods(data);
+    } finally {
+      setFoodsLoading(false);
+    }
+  }, []);
+
   const openDialog = async () => {
-    const allFoods = await getFoods();
-    setFoods(allFoods);
     setSelectedFood(null);
     setQuantity('1');
     setSelectedServingSizeId('');
     setCustomGrams('');
+    setAutocompleteInput('');
     setDialogOpen(true);
+    loadFoodsForAutocomplete();
   };
+
+  // Debounced search as user types in autocomplete
+  useEffect(() => {
+    if (!dialogOpen) return;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      loadFoodsForAutocomplete(autocompleteInput || undefined);
+    }, 300);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [autocompleteInput, dialogOpen, loadFoodsForAutocomplete]);
 
   const handleFoodSelect = (food: Food | null) => {
     setSelectedFood(food);
@@ -149,7 +172,7 @@ export default function FoodLogPage() {
   const handleBarcodeDetected = async (barcode: string) => {
     setScanLoading(true);
     try {
-      const localMatches = await getFoods(undefined, barcode);
+      const { data: localMatches } = await getFoods(undefined, barcode);
       if (localMatches.length > 0) {
         handleFoodSelect(localMatches[0]);
         setScanLoading(false);
@@ -181,6 +204,12 @@ export default function FoodLogPage() {
     ...mt,
     entries: logs.filter(l => l.meal_type === mt.value),
   })).filter(g => g.entries.length > 0);
+
+  // Build autocomplete options: foods + optional "create" entry
+  const autocompleteOptions: FoodOrCreate[] = [
+    ...foods,
+    ...(autocompleteInput.trim() ? [{ _create: true as const, inputValue: autocompleteInput.trim() }] : []),
+  ];
 
   return (
     <Box sx={{ p: 2 }}>
@@ -240,18 +269,17 @@ export default function FoodLogPage() {
         <DialogContent>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
             <Autocomplete<FoodOrCreate>
-              options={foods}
+              options={autocompleteOptions}
+              loading={foodsLoading}
               getOptionLabel={(opt) =>
                 '_create' in opt
                   ? `Add "${opt.inputValue}"`
                   : `${opt.name}${opt.brand ? ` (${opt.brand})` : ''}`
               }
-              filterOptions={(options, params) => {
-                const filtered = foodFilter(options, params);
-                if (params.inputValue.trim()) {
-                  filtered.push({ _create: true, inputValue: params.inputValue.trim() });
-                }
-                return filtered;
+              filterOptions={(x) => x}
+              inputValue={autocompleteInput}
+              onInputChange={(_, value, reason) => {
+                if (reason !== 'reset') setAutocompleteInput(value);
               }}
               value={selectedFood}
               onChange={(_, val) => {
@@ -282,6 +310,7 @@ export default function FoodLogPage() {
                     ...params.InputProps,
                     endAdornment: (
                       <>
+                        {foodsLoading && <CircularProgress size={18} />}
                         {params.InputProps.endAdornment}
                         <IconButton size="small" onClick={() => setScannerOpen(true)} title="Scan barcode">
                           {scanLoading ? <CircularProgress size={18} /> : <QrCodeScannerIcon fontSize="small" />}

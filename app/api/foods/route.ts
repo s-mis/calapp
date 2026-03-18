@@ -11,8 +11,10 @@ export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
   const search = searchParams.get('search');
   const barcode = searchParams.get('barcode');
+  const limit = Math.min(Math.max(parseInt(searchParams.get('limit') || '50', 10) || 50, 1), 200);
+  const offset = Math.max(parseInt(searchParams.get('offset') || '0', 10) || 0, 0);
 
-  let query = supabase.from('foods').select('*, serving_sizes(*)');
+  let query = supabase.from('foods').select('*, serving_sizes(*)', { count: 'exact' });
 
   if (barcode) {
     query = query.eq('barcode', barcode);
@@ -21,7 +23,9 @@ export async function GET(request: NextRequest) {
     query = query.or(`name.ilike.${pattern},brand.ilike.${pattern}`);
   }
 
-  const { data: foods, error } = await query.order('name');
+  const { data: foods, error, count } = await query
+    .order('name')
+    .range(offset, offset + limit - 1);
 
   if (error) {
     console.error('Error fetching foods:', error);
@@ -37,7 +41,7 @@ export async function GET(request: NextRequest) {
     return f;
   });
 
-  return NextResponse.json(result);
+  return NextResponse.json({ data: result, total: count ?? result.length });
 }
 
 // POST /api/foods - create food
