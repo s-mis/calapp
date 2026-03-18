@@ -10,16 +10,48 @@ import { createTheme } from '@mui/material/styles';
 
 const theme = createTheme({
   palette: {
-    primary: { main: '#1976d2' },
-    secondary: { main: '#ff9800' },
-    background: { default: '#f5f5f5' },
+    mode: 'dark',
+    primary: { main: '#00E5FF' },
+    secondary: { main: '#39FF14' },
+    error: { main: '#FF1744' },
+    warning: { main: '#FFD600' },
+    background: { default: '#0D0D0D', paper: '#1A1A1A' },
+    text: { primary: '#E0E0E0', secondary: '#9E9E9E' },
   },
   typography: {
     fontFamily: '"Roboto", "Helvetica", "Arial", sans-serif',
   },
   components: {
     MuiCard: {
-      defaultProps: { elevation: 1 },
+      defaultProps: { elevation: 0 },
+      styleOverrides: {
+        root: { border: '1px solid #2A2A2A' },
+      },
+    },
+    MuiAppBar: {
+      styleOverrides: {
+        root: { backgroundColor: '#0D0D0D', borderBottom: '1px solid #2A2A2A' },
+      },
+    },
+    MuiPaper: {
+      styleOverrides: {
+        root: { backgroundImage: 'none' },
+      },
+    },
+    MuiBottomNavigation: {
+      styleOverrides: {
+        root: { backgroundColor: '#0D0D0D', borderTop: '1px solid #2A2A2A' },
+      },
+    },
+    MuiBottomNavigationAction: {
+      styleOverrides: {
+        root: { color: '#666', '&.Mui-selected': { color: '#00E5FF' } },
+      },
+    },
+    MuiDialog: {
+      styleOverrides: {
+        paper: { backgroundColor: '#1A1A1A', border: '1px solid #2A2A2A' },
+      },
     },
   },
 });

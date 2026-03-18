@@ -11,6 +11,7 @@ export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
   const search = searchParams.get('search');
   const barcode = searchParams.get('barcode');
+  const sort = searchParams.get('sort') || 'name';
   const limit = Math.min(Math.max(parseInt(searchParams.get('limit') || '50', 10) || 50, 1), 200);
   const offset = Math.max(parseInt(searchParams.get('offset') || '0', 10) || 0, 0);
 
@@ -23,8 +24,25 @@ export async function GET(request: NextRequest) {
     query = query.or(`name.ilike.${pattern},brand.ilike.${pattern}`);
   }
 
+  // Apply sort
+  switch (sort) {
+    case 'calories_asc':
+      query = query.order('calories', { ascending: true, nullsFirst: false });
+      break;
+    case 'calories_desc':
+      query = query.order('calories', { ascending: false, nullsFirst: false });
+      break;
+    case 'protein_desc':
+      query = query.order('protein', { ascending: false, nullsFirst: false });
+      break;
+    case 'recent':
+      query = query.order('created_at', { ascending: false });
+      break;
+    default:
+      query = query.order('name');
+  }
+
   const { data: foods, error, count } = await query
-    .order('name')
     .range(offset, offset + limit - 1);
 
   if (error) {

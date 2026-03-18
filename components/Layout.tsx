@@ -106,7 +106,7 @@ export default function Layout({ children }: { children: ReactNode }) {
               sx={{
                 width: 64,
                 height: 64,
-                boxShadow: '0 4px 20px rgba(25, 118, 210, 0.55)',
+                boxShadow: '0 4px 20px rgba(0, 229, 255, 0.4)',
                 '& .MuiSvgIcon-root': { fontSize: 30 },
               }}
             >

@@ -37,7 +37,33 @@ import {
   ResponsiveContainer,
   Tooltip,
   Legend,
+  TooltipProps,
 } from 'recharts';
+
+function ChartTooltip({ active, payload, label }: TooltipProps<number, string>) {
+  if (!active || !payload?.length) return null;
+  return (
+    <Box sx={{
+      bgcolor: 'rgba(13,13,13,0.95)',
+      border: '1px solid rgba(0,229,255,0.3)',
+      borderRadius: 1,
+      p: 1.5,
+      minWidth: 100,
+    }}>
+      <Typography variant="caption" sx={{ color: '#00E5FF', display: 'block', mb: 0.5 }}>
+        {label}
+      </Typography>
+      {payload.map((p) => (
+        <Box key={p.dataKey} sx={{ display: 'flex', justifyContent: 'space-between', gap: 2 }}>
+          <Typography variant="body2" sx={{ color: p.color }}>{p.name}</Typography>
+          <Typography variant="body2" fontWeight={600}>
+            {typeof p.value === 'number' ? (p.dataKey === 'calories' ? `${Math.round(p.value)} kcal` : `${p.value.toFixed(1)}g`) : p.value}
+          </Typography>
+        </Box>
+      ))}
+    </Box>
+  );
+}
 
 const today = () => new Date().toISOString().split('T')[0];
 
@@ -49,10 +75,10 @@ const DEFAULT_FAT_GOAL = 65;
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 const MEAL_COLORS: Record<string, string> = {
-  breakfast: '#2196f3',
-  lunch: '#4caf50',
-  dinner: '#ff9800',
-  snack: '#9c27b0',
+  breakfast: '#00E5FF',
+  lunch: '#39FF14',
+  dinner: '#FFD600',
+  snack: '#E040FB',
 };
 
 function getLogCalories(entry: FoodLogWithFood): number {
@@ -170,9 +196,9 @@ export default function DashboardPage() {
     const fat = totals.fat ?? 0;
     if (protein + carbs + fat === 0) return [];
     return [
-      { name: 'Protein', value: protein, color: '#4caf50' },
-      { name: 'Carbs', value: carbs, color: '#ff9800' },
-      { name: 'Fat', value: fat, color: '#f44336' },
+      { name: 'Protein', value: protein, color: '#39FF14' },
+      { name: 'Carbs', value: carbs, color: '#FFD600' },
+      { name: 'Fat', value: fat, color: '#FF6B35' },
     ];
   }, [totals]);
 
@@ -197,9 +223,12 @@ export default function DashboardPage() {
     return weeklyReport.days.map((day) => {
       const d = new Date(day.date + 'T00:00:00');
       const dayIndex = (d.getDay() + 6) % 7;
+      const cals = Math.round(day.calories);
       return {
         name: DAY_LABELS[dayIndex],
-        calories: Math.round(day.calories),
+        calories: cals,
+        // Ghost value for empty days so bar is still visible
+        ghost: cals === 0 ? 1 : 0,
         protein: parseFloat(day.protein.toFixed(1)),
         carbs: parseFloat(day.carbs.toFixed(1)),
         fat: parseFloat(day.fat.toFixed(1)),
@@ -226,17 +255,17 @@ export default function DashboardPage() {
   const isOver = calories > calorieGoal;
 
   return (
-    <Box sx={{ p: 2 }}>
+    <Box sx={{ p: 2, pb: '120px' }}>
       <Typography variant="h5" gutterBottom>Today</Typography>
 
       {/* 1. Today's Summary — 2x2 grid */}
       <Card sx={{ mb: 2 }}>
         <CardContent sx={{ py: 2, '&:last-child': { pb: 2 } }}>
-          <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.5 }}>
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1.5 }}>
 
-            {/* Top-left: Calorie Ring */}
-            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-              <Box sx={{ position: 'relative', width: 160, height: 160 }}>
+            {/* Calorie Ring — full-width on mobile */}
+            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gridColumn: { xs: '1 / -1', sm: 'auto' } }}>
+              <Box sx={{ position: 'relative', width: { xs: 200, sm: 160 }, height: { xs: 200, sm: 160 }, filter: `drop-shadow(0 0 8px ${isOver ? 'rgba(255,23,68,0.4)' : 'rgba(0,229,255,0.4)'})` }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <RadialBarChart
                     cx="50%"
@@ -245,11 +274,11 @@ export default function DashboardPage() {
                     outerRadius="90%"
                     startAngle={90}
                     endAngle={-270}
-                    data={[{ value: calorieValue, fill: isOver ? '#f44336' : '#2196f3' }]}
+                    data={[{ value: calorieValue, fill: isOver ? '#FF1744' : '#00E5FF' }]}
                   >
                     <PolarAngleAxis type="number" domain={[0, calorieGoal]} angleAxisId={0} tick={false} />
                     <RadialBar
-                      background={{ fill: '#e0e0e0' }}
+                      background={{ fill: '#2A2A2A' }}
                       dataKey="value"
                       angleAxisId={0}
                       cornerRadius={10}
@@ -290,13 +319,13 @@ export default function DashboardPage() {
             {/* Top-right: Macro goal rows */}
             <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1.5 }}>
               {([
-                { label: 'Protein', value: totals?.protein ?? 0, goal: proteinGoal, color: '#4caf50' },
-                { label: 'Carbs', value: totals?.carbs ?? 0, goal: carbsGoal, color: '#ff9800' },
-                { label: 'Fat', value: totals?.fat ?? 0, goal: fatGoal, color: '#f44336' },
+                { label: 'Protein', value: totals?.protein ?? 0, goal: proteinGoal, color: '#39FF14' },
+                { label: 'Carbs', value: totals?.carbs ?? 0, goal: carbsGoal, color: '#FFD600' },
+                { label: 'Fat', value: totals?.fat ?? 0, goal: fatGoal, color: '#FF6B35' },
               ] as const).map((g) => {
                 const pct = g.goal > 0 ? Math.min((g.value / g.goal) * 100, 100) : 0;
                 const over = g.value > g.goal;
-                const displayColor = over ? '#f44336' : g.color;
+                const displayColor = over ? '#FF1744' : g.color;
                 return (
                   <Box key={g.label}>
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.25 }}>
@@ -307,12 +336,13 @@ export default function DashboardPage() {
                         {g.value.toFixed(1)}/{g.goal}g
                       </Typography>
                     </Box>
-                    <Box sx={{ width: '100%', height: 6, borderRadius: 3, bgcolor: '#e0e0e0' }}>
+                    <Box sx={{ width: '100%', height: 6, borderRadius: 3, bgcolor: '#2A2A2A' }}>
                       <Box sx={{
                         width: `${pct}%`,
                         height: '100%',
                         borderRadius: 3,
                         bgcolor: displayColor,
+                        boxShadow: `0 0 8px ${displayColor}66`,
                         transition: 'width 0.3s ease',
                       }} />
                     </Box>
@@ -321,48 +351,40 @@ export default function DashboardPage() {
               })}
             </Box>
 
-            {/* Bottom-left: Macro donut */}
-            <Box sx={{ minWidth: 0 }}>
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'center', mb: 0.5 }}>
-                Macros
-              </Typography>
-              {macroData.length > 0 ? (
-                <>
-                  <ResponsiveContainer width="100%" height={110}>
-                    <PieChart>
-                      <Pie
-                        data={macroData}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={25}
-                        outerRadius={45}
-                        dataKey="value"
-                        stroke="none"
-                      >
-                        {macroData.map((entry, i) => (
-                          <Cell key={i} fill={entry.color} />
-                        ))}
-                      </Pie>
-                      <Tooltip formatter={(val: number) => `${val.toFixed(1)}g`} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                  <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1, flexWrap: 'wrap' }}>
-                    {macroData.map((m) => (
-                      <Box key={m.name} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                        <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: m.color }} />
-                        <Typography variant="caption">{m.name} {m.value.toFixed(1)}g</Typography>
-                      </Box>
-                    ))}
-                  </Box>
-                  {(totals?.fiber ?? 0) > 0 && (
-                    <Typography variant="caption" color="#9c27b0" textAlign="center" sx={{ display: 'block', mt: 0.5 }}>
-                      Fiber: {(totals!.fiber).toFixed(1)}g
+            {/* Bottom-left: Remaining kcal */}
+            <Box sx={{ minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+              {(() => {
+                const remaining = calorieGoal - calories;
+                const isOverBudget = remaining < 0;
+                const color = isOverBudget ? '#FF1744' : '#39FF14';
+                return (
+                  <>
+                    <Typography
+                      variant="h4"
+                      fontWeight="bold"
+                      sx={{
+                        color,
+                        textShadow: `0 0 12px ${color}66`,
+                        ...(isOverBudget ? {
+                          animation: 'pulse 2s ease-in-out infinite',
+                          '@keyframes pulse': {
+                            '0%, 100%': { opacity: 1 },
+                            '50%': { opacity: 0.7 },
+                          },
+                        } : {}),
+                      }}
+                    >
+                      {Math.abs(Math.round(remaining))}
                     </Typography>
-                  )}
-                </>
-              ) : (
-                <Typography variant="caption" color="text.secondary" textAlign="center" sx={{ display: 'block', mt: 4 }}>
-                  No data
+                    <Typography variant="caption" sx={{ color }}>
+                      kcal {isOverBudget ? 'over' : 'left'}
+                    </Typography>
+                  </>
+                );
+              })()}
+              {(totals?.fiber ?? 0) > 0 && (
+                <Typography variant="caption" color="#E040FB" sx={{ mt: 0.5 }}>
+                  Fiber: {(totals!.fiber).toFixed(1)}g
                 </Typography>
               )}
             </Box>
@@ -534,9 +556,9 @@ export default function DashboardPage() {
                   others.setB(newB);
                 };
                 const sliders: { key: 'protein' | 'carbs' | 'fat'; label: string; value: number; color: string; calsPerGram: number }[] = [
-                  { key: 'protein', label: 'Protein', value: proteinPct, color: '#4caf50', calsPerGram: 4 },
-                  { key: 'carbs', label: 'Carbs', value: carbsPct, color: '#ff9800', calsPerGram: 4 },
-                  { key: 'fat', label: 'Fat', value: fatPct, color: '#f44336', calsPerGram: 9 },
+                  { key: 'protein', label: 'Protein', value: proteinPct, color: '#39FF14', calsPerGram: 4 },
+                  { key: 'carbs', label: 'Carbs', value: carbsPct, color: '#FFD600', calsPerGram: 4 },
+                  { key: 'fat', label: 'Fat', value: fatPct, color: '#FF6B35', calsPerGram: 9 },
                 ];
                 return sliders.map((s) => (
                   <Box key={s.key} sx={{ px: 1, mt: s.key === 'protein' ? 0 : 0.5 }}>
@@ -579,10 +601,10 @@ export default function DashboardPage() {
 
             {weeklyAvg && weeklyAvg.daysTracked > 0 && (() => {
               const gauges = [
-                { label: 'Cals', value: weeklyAvg.calories, goal: calorieGoal, unit: 'kcal', color: '#2196f3', decimals: 0 },
-                { label: 'Protein', value: weeklyAvg.protein, goal: proteinGoal, unit: 'g', color: '#4caf50', decimals: 1 },
-                { label: 'Carbs', value: weeklyAvg.carbs, goal: carbsGoal, unit: 'g', color: '#ff9800', decimals: 1 },
-                { label: 'Fat', value: weeklyAvg.fat, goal: fatGoal, unit: 'g', color: '#f44336', decimals: 1 },
+                { label: 'Cals', value: weeklyAvg.calories, goal: calorieGoal, unit: 'kcal', color: '#00E5FF', decimals: 0 },
+                { label: 'Protein', value: weeklyAvg.protein, goal: proteinGoal, unit: 'g', color: '#39FF14', decimals: 1 },
+                { label: 'Carbs', value: weeklyAvg.carbs, goal: carbsGoal, unit: 'g', color: '#FFD600', decimals: 1 },
+                { label: 'Fat', value: weeklyAvg.fat, goal: fatGoal, unit: 'g', color: '#FF6B35', decimals: 1 },
               ];
               return (
                 <Box sx={{ mb: 2 }}>
@@ -593,7 +615,7 @@ export default function DashboardPage() {
                     {gauges.map((g) => {
                       const pct = g.goal > 0 ? Math.round((g.value / g.goal) * 100) : 0;
                       const isOver = pct > 100;
-                      const displayColor = isOver ? '#f44336' : g.color;
+                      const displayColor = isOver ? '#FF1744' : g.color;
                       return (
                         <Box key={g.label} sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 64 }}>
                           <Box sx={{ position: 'relative', display: 'inline-flex' }}>
@@ -602,14 +624,14 @@ export default function DashboardPage() {
                               value={100}
                               size={56}
                               thickness={4}
-                              sx={{ color: '#e0e0e0', position: 'absolute' }}
+                              sx={{ color: '#2A2A2A', position: 'absolute' }}
                             />
                             <CircularProgress
                               variant="determinate"
                               value={Math.min(pct, 100)}
                               size={56}
                               thickness={4}
-                              sx={{ color: displayColor }}
+                              sx={{ color: displayColor, filter: `drop-shadow(0 0 4px ${displayColor})` }}
                             />
                             <Box sx={{
                               position: 'absolute',
@@ -640,44 +662,45 @@ export default function DashboardPage() {
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'center', mb: 0.5 }}>
               Calories
             </Typography>
-            <ResponsiveContainer width="100%" height={160}>
+            <ResponsiveContainer width="100%" height={200}>
               <BarChart data={weeklyData} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
-                <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-                <YAxis tick={{ fontSize: 12 }} domain={[0, Math.ceil(Math.max(calorieGoal, ...weeklyData.map(d => d.calories)) * 1.15)]} />
-                <Tooltip formatter={(val: number) => `${val} kcal`} />
+                <XAxis dataKey="name" tick={{ fill: 'rgba(255,255,255,0.6)', fontSize: 11 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 11 }} axisLine={false} tickLine={false} domain={[0, Math.ceil(Math.max(calorieGoal, ...weeklyData.map(d => d.calories)) * 1.15)]} />
+                <Tooltip content={<ChartTooltip />} />
                 <ReferenceLine
                   y={calorieGoal}
-                  stroke="#f44336"
+                  stroke="#FF1744"
                   strokeDasharray="4 4"
-                  label={{ value: `Goal ${calorieGoal}`, position: 'insideTopRight', fontSize: 11, fill: '#f44336' }}
+                  label={{ value: `Goal ${calorieGoal}`, position: 'insideTopRight', fontSize: 11, fill: '#FF1744' }}
                 />
                 {weeklyAvg && weeklyAvg.daysTracked > 0 && (
                   <ReferenceLine
                     y={weeklyAvg.calories}
-                    stroke="#66bb6a"
+                    stroke="#39FF14"
                     strokeDasharray="6 3"
-                    label={{ value: `Avg ${weeklyAvg.calories}`, position: 'insideBottomRight', fontSize: 11, fill: '#66bb6a' }}
+                    label={{ value: `Avg ${weeklyAvg.calories}`, position: 'insideBottomRight', fontSize: 11, fill: '#39FF14' }}
                   />
                 )}
-                <Bar dataKey="calories" name="Calories" fill="#2196f3" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="calories" name="Calories" fill="#00E5FF" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="ghost" fill="#00E5FF" opacity={0.15} radius={[4, 4, 0, 0]} legendType="none" name="" isAnimationActive={false} />
               </BarChart>
             </ResponsiveContainer>
 
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'center', mt: 2, mb: 0.5 }}>
               Macros (g)
             </Typography>
-            <ResponsiveContainer width="100%" height={180}>
+            <ResponsiveContainer width="100%" height={220}>
               <BarChart data={weeklyData} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
-                <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-                <YAxis tick={{ fontSize: 12 }} domain={[0, Math.ceil(Math.max(proteinGoal, carbsGoal, fatGoal, ...weeklyData.map(d => Math.max(d.protein, d.carbs, d.fat))) * 1.15)]} />
-                <Tooltip formatter={(val: number) => `${val.toFixed(1)}g`} />
+                <XAxis dataKey="name" tick={{ fill: 'rgba(255,255,255,0.6)', fontSize: 11 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 11 }} axisLine={false} tickLine={false} domain={[0, Math.ceil(Math.max(proteinGoal, carbsGoal, fatGoal, ...weeklyData.map(d => Math.max(d.protein, d.carbs, d.fat))) * 1.15)]} />
+                <Tooltip content={<ChartTooltip />} />
                 <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
-                <ReferenceLine y={proteinGoal} stroke="#4caf50" strokeDasharray="4 4" label={{ value: `P ${proteinGoal}g`, position: 'insideTopRight', fontSize: 10, fill: '#4caf50' }} />
-                <ReferenceLine y={carbsGoal} stroke="#ff9800" strokeDasharray="4 4" label={{ value: `C ${carbsGoal}g`, position: 'insideTopRight', fontSize: 10, fill: '#ff9800' }} />
-                <ReferenceLine y={fatGoal} stroke="#f44336" strokeDasharray="4 4" label={{ value: `F ${fatGoal}g`, position: 'insideTopRight', fontSize: 10, fill: '#f44336' }} />
-                <Bar dataKey="protein" name="Protein" fill="#4caf50" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="carbs" name="Carbs" fill="#ff9800" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="fat" name="Fat" fill="#f44336" radius={[4, 4, 0, 0]} />
+                <ReferenceLine y={proteinGoal} stroke="#39FF14" strokeDasharray="4 4" label={{ value: `P ${proteinGoal}g`, position: 'insideTopRight', fontSize: 10, fill: '#39FF14' }} />
+                <ReferenceLine y={carbsGoal} stroke="#FFD600" strokeDasharray="4 4" label={{ value: `C ${carbsGoal}g`, position: 'insideTopRight', fontSize: 10, fill: '#FFD600' }} />
+                <ReferenceLine y={fatGoal} stroke="#FF6B35" strokeDasharray="4 4" label={{ value: `F ${fatGoal}g`, position: 'insideTopRight', fontSize: 10, fill: '#FF6B35' }} />
+                <Bar dataKey="protein" name="Protein" fill="#39FF14" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="carbs" name="Carbs" fill="#FFD600" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="fat" name="Fat" fill="#FF6B35" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>

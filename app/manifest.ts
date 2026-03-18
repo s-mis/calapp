@@ -7,8 +7,8 @@ export default function manifest(): MetadataRoute.Manifest {
     description: 'Track your daily calorie intake',
     start_url: '/',
     display: 'standalone',
-    background_color: '#ffffff',
-    theme_color: '#1976d2',
+    background_color: '#0D0D0D',
+    theme_color: '#0D0D0D',
     icons: [
       {
         src: '/icon-192.svg',

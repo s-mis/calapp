@@ -20,12 +20,13 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
 }
 
 // Foods
-export const getFoods = (search?: string, barcode?: string, limit?: number, offset?: number) => {
+export const getFoods = (search?: string, barcode?: string, limit?: number, offset?: number, sort?: string) => {
   const params = new URLSearchParams();
   if (barcode) params.set('barcode', barcode);
   else if (search) params.set('search', search);
   if (limit != null) params.set('limit', String(limit));
   if (offset != null) params.set('offset', String(offset));
+  if (sort) params.set('sort', sort);
   const qs = params.toString();
   return request<PaginatedResponse<Food>>(`/foods${qs ? `?${qs}` : ''}`);
 };
@@ -63,6 +64,9 @@ export const updateLog = (id: number, log: Partial<FoodLog>) =>
 
 export const deleteLog = (id: number) =>
   request<void>(`/logs/${id}`, { method: 'DELETE' });
+
+export const getRecentFoods = () =>
+  request<Food[]>('/logs/recent-foods');
 
 // Reports
 export const getDailyReport = (date: string) =>

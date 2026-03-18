@@ -14,19 +14,28 @@ import Autocomplete from '@mui/material/Autocomplete';
 import IconButton from '@mui/material/IconButton';
 import Snackbar from '@mui/material/Snackbar';
 import CircularProgress from '@mui/material/CircularProgress';
+import LinearProgress from '@mui/material/LinearProgress';
+import Skeleton from '@mui/material/Skeleton';
 import { useFab } from '@/context/FabContext';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import QrCodeScannerIcon from '@mui/icons-material/QrCodeScanner';
 import { useSearchParams } from 'next/navigation';
-import { getLogs, getFoods, createLog, deleteLog, createFood } from '@/services/api';
+import { getLogs, getFoods, createLog, deleteLog, createFood, getRecentFoods } from '@/services/api';
 import { FoodLogWithFood, Food, MealType, ServingSize } from '@/types';
 import FoodLogEntry from '@/components/FoodLogEntry';
 import AddFoodDialog, { FoodSaveData } from '@/components/AddFoodDialog';
 import BarcodeScannerModal from '@/components/BarcodeScannerModal';
 import { fetchByBarcode } from '@/utils/openFoodFacts';
+import TodayIcon from '@mui/icons-material/Today';
 
-type FoodOrCreate = Food | { _create: true; inputValue: string };
+type FoodOrCreate = (Food & { _group?: string }) | { _create: true; inputValue: string };
+
+function getLogCalories(entry: FoodLogWithFood): number {
+  const gramsPerServing = entry.serving_size?.grams ?? entry.custom_grams ?? 0;
+  const effectiveGrams = gramsPerServing * entry.quantity;
+  return (entry.food.calories ?? 0) * effectiveGrams / 100;
+}
 
 const PAGE_SIZE = 50;
 
@@ -49,11 +58,19 @@ export default function FoodLogPage() {
   const searchParams = useSearchParams();
   const [date, setDate] = useState(today());
   const [logs, setLogs] = useState<FoodLogWithFood[]>([]);
+  const [logsLoading, setLogsLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [foods, setFoods] = useState<Food[]>([]);
+  const [recentFoods, setRecentFoods] = useState<Food[]>([]);
   const [foodsLoading, setFoodsLoading] = useState(false);
   const [selectedFood, setSelectedFood] = useState<Food | null>(null);
-  const [mealType, setMealType] = useState<MealType>('lunch');
+  const [mealType, setMealType] = useState<MealType>(() => {
+    const h = new Date().getHours();
+    if (h < 10) return 'breakfast';
+    if (h < 14) return 'lunch';
+    if (h < 20) return 'dinner';
+    return 'snack';
+  });
   const [quantity, setQuantity] = useState('1');
   const [selectedServingSizeId, setSelectedServingSizeId] = useState<string>('');
   const [customGrams, setCustomGrams] = useState('');
@@ -66,12 +83,37 @@ export default function FoodLogPage() {
   const [autocompleteInput, setAutocompleteInput] = useState('');
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
 
-  const loadLogs = async () => {
-    const data = await getLogs(date);
-    setLogs(data);
+  // Swipe date navigation
+  const swipeRef = useRef<{ startX: number; startY: number } | null>(null);
+  const isToday = date === today();
+  const dateDisplay = (() => {
+    const d = new Date(date + 'T00:00:00');
+    return d.toLocaleDateString('en', { weekday: 'long', month: 'short', day: 'numeric' });
+  })();
+  const handleSwipeStart = (e: React.TouchEvent) => {
+    swipeRef.current = { startX: e.touches[0].clientX, startY: e.touches[0].clientY };
+  };
+  const handleSwipeEnd = (e: React.TouchEvent) => {
+    if (!swipeRef.current) return;
+    const dx = e.changedTouches[0].clientX - swipeRef.current.startX;
+    const dy = e.changedTouches[0].clientY - swipeRef.current.startY;
+    swipeRef.current = null;
+    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      changeDate(dx < 0 ? 1 : -1);
+    }
   };
 
-  useEffect(() => { loadLogs(); }, [date]);
+  const loadLogs = async () => {
+    setLogsLoading(true);
+    try {
+      const data = await getLogs(date);
+      setLogs(data);
+    } finally {
+      setLogsLoading(false);
+    }
+  };
+
+  useEffect(() => { setLogs([]); loadLogs(); }, [date]);
 
   useEffect(() => {
     setFabAction(openDialog);
@@ -103,6 +145,7 @@ export default function FoodLogPage() {
     setAutocompleteInput('');
     setDialogOpen(true);
     loadFoodsForAutocomplete();
+    getRecentFoods().then(setRecentFoods).catch(() => {});
   };
 
   // Debounced search as user types in autocomplete
@@ -160,6 +203,18 @@ export default function FoodLogPage() {
     loadLogs();
   };
 
+  const handleLogAgain = async (entry: FoodLogWithFood) => {
+    await createLog({
+      food_id: entry.food_id,
+      date,
+      meal_type: mealType,
+      serving_size_id: entry.serving_size_id ?? null,
+      quantity: entry.quantity,
+      custom_grams: entry.custom_grams ?? null,
+    });
+    loadLogs();
+  };
+
   const handleNewFoodSave = async (foodData: FoodSaveData) => {
     const newFood = await createFood(foodData);
     setFoods(prev => [...prev, newFood]);
@@ -205,27 +260,62 @@ export default function FoodLogPage() {
     entries: logs.filter(l => l.meal_type === mt.value),
   })).filter(g => g.entries.length > 0);
 
-  // Build autocomplete options: foods + optional "create" entry
-  const autocompleteOptions: FoodOrCreate[] = [
-    ...foods,
-    ...(autocompleteInput.trim() ? [{ _create: true as const, inputValue: autocompleteInput.trim() }] : []),
-  ];
+  // Build autocomplete options: recent foods (when no search) + all foods + optional "create" entry
+  const autocompleteOptions: FoodOrCreate[] = (() => {
+    const hasSearch = autocompleteInput.trim().length > 0;
+    const recentIds = new Set(recentFoods.map(f => f.id));
+    if (!hasSearch && recentFoods.length > 0) {
+      return [
+        ...recentFoods.map(f => ({ ...f, _group: 'Recent' })),
+        ...foods.filter(f => !recentIds.has(f.id)).map(f => ({ ...f, _group: 'All Foods' })),
+      ];
+    }
+    return [
+      ...foods,
+      ...(hasSearch ? [{ _create: true as const, inputValue: autocompleteInput.trim() }] : []),
+    ];
+  })();
 
   return (
-    <Box sx={{ p: 2 }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 2, gap: 1 }}>
+    <Box sx={{ p: 2 }} onTouchStart={handleSwipeStart} onTouchEnd={handleSwipeEnd}>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 2, gap: 0.5 }}>
         <IconButton onClick={() => changeDate(-1)}><ChevronLeftIcon /></IconButton>
-        <TextField
-          type="date"
-          size="small"
-          value={date}
-          onChange={e => setDate(e.target.value)}
-          sx={{ width: 160 }}
-        />
+        <Typography
+          variant="subtitle1"
+          sx={{ minWidth: 180, textAlign: 'center', cursor: 'pointer', userSelect: 'none' }}
+          onClick={() => {
+            const input = document.createElement('input');
+            input.type = 'date';
+            input.value = date;
+            input.style.position = 'fixed';
+            input.style.opacity = '0';
+            input.addEventListener('change', () => { setDate(input.value); input.remove(); });
+            input.addEventListener('blur', () => input.remove());
+            document.body.appendChild(input);
+            input.showPicker();
+          }}
+        >
+          {dateDisplay}
+        </Typography>
         <IconButton onClick={() => changeDate(1)}><ChevronRightIcon /></IconButton>
+        {!isToday && (
+          <IconButton size="small" onClick={() => setDate(today())} title="Go to today" sx={{ color: '#00E5FF' }}>
+            <TodayIcon fontSize="small" />
+          </IconButton>
+        )}
       </Box>
 
-      {grouped.length === 0 && (
+      {logsLoading && <LinearProgress sx={{ mb: 2, borderRadius: 1 }} />}
+
+      {logsLoading && (
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+          {[1, 2, 3].map(i => (
+            <Skeleton key={i} variant="rounded" height={80} sx={{ borderRadius: 2 }} />
+          ))}
+        </Box>
+      )}
+
+      {!logsLoading && grouped.length === 0 && (
         <Typography color="text.secondary" sx={{ textAlign: 'center', mt: 4 }}>
           No entries for this day. Tap + to add one.
         </Typography>
@@ -233,11 +323,16 @@ export default function FoodLogPage() {
 
       {grouped.map(group => (
         <Box key={group.value} sx={{ mb: 2 }}>
-          <Typography variant="subtitle1" sx={{ mb: 0.5, fontWeight: 600 }}>
-            {group.label}
-          </Typography>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
+            <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+              {group.label}
+            </Typography>
+            <Typography variant="body2" sx={{ color: '#00E5FF' }}>
+              {Math.round(group.entries.reduce((sum, e) => sum + getLogCalories(e), 0))} kcal
+            </Typography>
+          </Box>
           {group.entries.map(entry => (
-            <FoodLogEntry key={entry.id} entry={entry} onDelete={handleDelete} />
+            <FoodLogEntry key={entry.id} entry={entry} onDelete={handleDelete} onLogAgain={handleLogAgain} />
           ))}
         </Box>
       ))}
@@ -276,6 +371,15 @@ export default function FoodLogPage() {
                   ? `Add "${opt.inputValue}"`
                   : `${opt.name}${opt.brand ? ` (${opt.brand})` : ''}`
               }
+              groupBy={(opt) => ('_create' in opt ? '' : (opt as Food & { _group?: string })._group || '')}
+              renderGroup={(params) => params.group ? (
+                <li key={params.key}>
+                  <Typography variant="caption" sx={{ px: 2, py: 0.5, color: '#00E5FF', fontWeight: 600, display: 'block', bgcolor: 'rgba(0,229,255,0.06)' }}>
+                    {params.group}
+                  </Typography>
+                  <ul style={{ padding: 0 }}>{params.children}</ul>
+                </li>
+              ) : <li key={params.key}><ul style={{ padding: 0 }}>{params.children}</ul></li>}
               filterOptions={(x) => x}
               inputValue={autocompleteInput}
               onInputChange={(_, value, reason) => {
@@ -295,7 +399,7 @@ export default function FoodLogPage() {
                 !('_create' in opt) && !('_create' in val) && opt.id === val.id
               }
               renderOption={(props, opt) => (
-                <li {...props} key={'_create' in opt ? '__create__' : opt.id}>
+                <li {...props} key={'_create' in opt ? '__create__' : `${('_group' in opt ? opt._group : '')}-${opt.id}`}>
                   {'_create' in opt
                     ? <Box component="span" sx={{ color: 'primary.main', fontStyle: 'italic' }}>+ Add &quot;{opt.inputValue}&quot;</Box>
                     : `${opt.name}${opt.brand ? ` (${opt.brand})` : ''}`
@@ -377,11 +481,11 @@ export default function FoodLogPage() {
                       : ''}
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
-                  <Box component="span" sx={{ color: '#4caf50' }}>P: {previewProtein}g</Box>
+                  <Box component="span" sx={{ color: '#39FF14' }}>P: {previewProtein}g</Box>
                   {' \u00B7 '}
-                  <Box component="span" sx={{ color: '#ff9800' }}>C: {previewCarbs}g</Box>
+                  <Box component="span" sx={{ color: '#FFD600' }}>C: {previewCarbs}g</Box>
                   {' \u00B7 '}
-                  <Box component="span" sx={{ color: '#f44336' }}>F: {previewFat}g</Box>
+                  <Box component="span" sx={{ color: '#FF6B35' }}>F: {previewFat}g</Box>
                 </Typography>
               </Box>
             )}
