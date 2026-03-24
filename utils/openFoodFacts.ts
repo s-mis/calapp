@@ -1,22 +1,14 @@
 import type { FoodSaveData } from '@/components/AddFoodDialog';
 
-export async function fetchByBarcode(barcode: string): Promise<FoodSaveData | null> {
-  const res = await fetch(
-    `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(barcode)}.json`
-  );
-  if (!res.ok) return null;
+const toVal = (v: unknown): number | null => {
+  if (v === null || v === undefined || v === '') return null;
+  const num = parseFloat(String(v));
+  return isNaN(num) ? null : num;
+};
 
-  const data = await res.json();
-  if (!data || data.status === 0) return null;
-
-  const p = data.product ?? {};
+/* eslint-disable @typescript-eslint/no-explicit-any */
+function mapProductToFoodSaveData(p: any, barcode?: string): FoodSaveData {
   const n = p.nutriments ?? {};
-
-  const toVal = (v: unknown): number | null => {
-    if (v === null || v === undefined || v === '') return null;
-    const num = parseFloat(String(v));
-    return isNaN(num) ? null : num;
-  };
 
   const serving_sizes: FoodSaveData['serving_sizes'] = [
     { name: '100g', grams: 100, sort_order: 0, is_default: 1 },
@@ -48,7 +40,42 @@ export async function fetchByBarcode(barcode: string): Promise<FoodSaveData | nu
     potassium: toVal(n['potassium_100g']) != null ? (toVal(n['potassium_100g'])! * 1000) : null,
     calcium: toVal(n['calcium_100g']),
     iron: toVal(n['iron_100g']),
-    barcode,
+    barcode: barcode ?? (p.code as string | undefined) ?? null,
     serving_sizes,
   };
+}
+/* eslint-enable @typescript-eslint/no-explicit-any */
+
+export async function fetchByBarcode(barcode: string): Promise<FoodSaveData | null> {
+  const res = await fetch(
+    `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(barcode)}.json`
+  );
+  if (!res.ok) return null;
+
+  const data = await res.json();
+  if (!data || data.status === 0) return null;
+
+  return mapProductToFoodSaveData(data.product ?? {}, barcode);
+}
+
+export async function searchByText(query: string): Promise<FoodSaveData[]> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+
+  try {
+    const res = await fetch(
+      `https://world.openfoodfacts.org/api/v2/search?search_terms=${encodeURIComponent(query)}&page_size=10&fields=product_name,brands,nutriments,serving_quantity,serving_size,code`,
+      { signal: controller.signal }
+    );
+    if (!res.ok) return [];
+
+    const data = await res.json();
+    const products = data.products ?? [];
+
+    return products
+      .map((p: Record<string, unknown>) => mapProductToFoodSaveData(p))
+      .filter((f: FoodSaveData) => f.name && f.name.trim().length > 0);
+  } finally {
+    clearTimeout(timeout);
+  }
 }

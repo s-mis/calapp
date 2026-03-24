@@ -29,6 +29,8 @@ import FoodLogEntry from '@/components/FoodLogEntry';
 import AddFoodDialog, { FoodSaveData } from '@/components/AddFoodDialog';
 import BarcodeScannerModal from '@/components/BarcodeScannerModal';
 import { fetchByBarcode } from '@/utils/openFoodFacts';
+import OFFSearchDialog from '@/components/OFFSearchDialog';
+import TravelExploreIcon from '@mui/icons-material/TravelExplore';
 import TodayIcon from '@mui/icons-material/Today';
 
 type FoodOrCreate = (Food & { _group?: string }) | { _create: true; inputValue: string };
@@ -80,6 +82,8 @@ export default function FoodLogPage() {
   const [addFoodOpen, setAddFoodOpen] = useState(false);
   const [addFoodInitialName, setAddFoodInitialName] = useState('');
   const [addFoodPrefill, setAddFoodPrefill] = useState<FoodSaveData | null>(null);
+  const [offSearchOpen, setOffSearchOpen] = useState(false);
+  const [offSearchQuery, setOffSearchQuery] = useState('');
   const [scannerOpen, setScannerOpen] = useState(false);
   const [scanLoading, setScanLoading] = useState(false);
   const [snackbar, setSnackbar] = useState<string | null>(null);
@@ -310,6 +314,29 @@ export default function FoodLogPage() {
     setAddFoodPrefill(null);
   };
 
+  const handleOFFSelect = async (foodData: FoodSaveData) => {
+    // Duplicate prevention: check if barcode already exists locally
+    if (foodData.barcode) {
+      const { data: localMatches } = await getFoods(undefined, foodData.barcode);
+      if (localMatches.length > 0) {
+        handleFoodSelect(localMatches[0]);
+        setOffSearchOpen(false);
+        return;
+      }
+    }
+    const newFood = await createFood(foodData);
+    setFoods(prev => [...prev, newFood]);
+    handleFoodSelect(newFood);
+    setOffSearchOpen(false);
+  };
+
+  const handleOFFManualAdd = (query: string) => {
+    setOffSearchOpen(false);
+    setAddFoodInitialName(query);
+    setAddFoodPrefill(null);
+    setAddFoodOpen(true);
+  };
+
   const handleBarcodeDetected = async (barcode: string) => {
     setScanLoading(true);
     try {
@@ -432,6 +459,14 @@ export default function FoodLogPage() {
         prefill={addFoodPrefill}
       />
 
+      <OFFSearchDialog
+        open={offSearchOpen}
+        onClose={() => setOffSearchOpen(false)}
+        onSelect={handleOFFSelect}
+        onManualAdd={handleOFFManualAdd}
+        initialQuery={offSearchQuery}
+      />
+
       <BarcodeScannerModal
         open={scannerOpen}
         onClose={() => setScannerOpen(false)}
@@ -524,6 +559,25 @@ export default function FoodLogPage() {
                     />
                   )}
                 />
+
+                {autocompleteInput.trim() && !selectedFood && (
+                  <Box
+                    onClick={() => {
+                      setOffSearchQuery(autocompleteInput.trim());
+                      setOffSearchOpen(true);
+                    }}
+                    sx={{
+                      display: 'flex', alignItems: 'center', gap: 0.5, px: 1, py: 0.75,
+                      color: '#00E5FF', cursor: 'pointer', borderRadius: 1,
+                      '&:hover': { bgcolor: 'rgba(0,229,255,0.08)' },
+                    }}
+                  >
+                    <TravelExploreIcon fontSize="small" />
+                    <Typography variant="body2">
+                      Search OpenFoodFacts for &quot;{autocompleteInput.trim()}&quot;
+                    </Typography>
+                  </Box>
+                )}
 
                 {selectedFood && (
                   <TextField
