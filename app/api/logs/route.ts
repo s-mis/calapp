@@ -43,6 +43,10 @@ export async function GET(request: NextRequest) {
     serving_size_id: row.serving_size_id,
     quantity: row.quantity,
     custom_grams: row.custom_grams,
+    cal_override: row.cal_override ?? null,
+    protein_override: row.protein_override ?? null,
+    carbs_override: row.carbs_override ?? null,
+    fat_override: row.fat_override ?? null,
     created_at: row.created_at,
     food: row.food,
     serving_size: row.serving_size || null,
@@ -58,7 +62,8 @@ export async function POST(request: NextRequest) {
   const { user, supabase } = auth;
 
   const body = await request.json();
-  const { food_id, date, meal_type, serving_size_id, quantity, custom_grams } = body;
+  const { food_id, date, meal_type, serving_size_id, quantity, custom_grams,
+    cal_override, protein_override, carbs_override, fat_override } = body;
 
   if (!food_id || !date || !meal_type) {
     return NextResponse.json({ error: 'food_id, date, and meal_type are required' }, { status: 400 });
@@ -69,7 +74,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'meal_type must be breakfast, lunch, dinner, or snack' }, { status: 400 });
   }
 
-  if (!serving_size_id && custom_grams == null) {
+  const hasOverrides = cal_override != null;
+  if (!hasOverrides && !serving_size_id && custom_grams == null) {
     return NextResponse.json({ error: 'Either serving_size_id or custom_grams must be provided' }, { status: 400 });
   }
 
@@ -88,6 +94,10 @@ export async function POST(request: NextRequest) {
       serving_size_id: serving_size_id ?? null,
       quantity: quantity ?? 1,
       custom_grams: custom_grams ?? null,
+      cal_override: cal_override ?? null,
+      protein_override: protein_override ?? null,
+      carbs_override: carbs_override ?? null,
+      fat_override: fat_override ?? null,
     })
     .select()
     .single();

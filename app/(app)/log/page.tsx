@@ -16,13 +16,15 @@ import Snackbar from '@mui/material/Snackbar';
 import CircularProgress from '@mui/material/CircularProgress';
 import LinearProgress from '@mui/material/LinearProgress';
 import Skeleton from '@mui/material/Skeleton';
+import ToggleButton from '@mui/material/ToggleButton';
+import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import { useFab } from '@/context/FabContext';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import QrCodeScannerIcon from '@mui/icons-material/QrCodeScanner';
 import { useSearchParams } from 'next/navigation';
-import { getLogs, getFoods, createLog, deleteLog, createFood, getRecentFoods } from '@/services/api';
-import { FoodLogWithFood, Food, MealType, ServingSize } from '@/types';
+import { getLogs, getFoods, createLog, deleteLog, updateLog, createFood, getRecentFoods } from '@/services/api';
+import { FoodLogWithFood, Food, MealType, ServingSize, QUICK_ADD_BRAND } from '@/types';
 import FoodLogEntry from '@/components/FoodLogEntry';
 import AddFoodDialog, { FoodSaveData } from '@/components/AddFoodDialog';
 import BarcodeScannerModal from '@/components/BarcodeScannerModal';
@@ -32,6 +34,7 @@ import TodayIcon from '@mui/icons-material/Today';
 type FoodOrCreate = (Food & { _group?: string }) | { _create: true; inputValue: string };
 
 function getLogCalories(entry: FoodLogWithFood): number {
+  if (entry.cal_override != null) return entry.cal_override;
   const gramsPerServing = entry.serving_size?.grams ?? entry.custom_grams ?? 0;
   const effectiveGrams = gramsPerServing * entry.quantity;
   return (entry.food.calories ?? 0) * effectiveGrams / 100;
@@ -83,6 +86,13 @@ export default function FoodLogPage() {
   const [saving, setSaving] = useState(false);
   const [autocompleteInput, setAutocompleteInput] = useState('');
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
+
+  // Quick Add state
+  const [dialogMode, setDialogMode] = useState<'select' | 'quick'>('select');
+  const [quickCalories, setQuickCalories] = useState('');
+  const [quickProtein, setQuickProtein] = useState('');
+  const [quickCarbs, setQuickCarbs] = useState('');
+  const [quickFat, setQuickFat] = useState('');
 
   // Swipe date navigation
   const swipeRef = useRef<{ startX: number; startY: number } | null>(null);
@@ -144,6 +154,11 @@ export default function FoodLogPage() {
     setSelectedServingSizeId('');
     setCustomGrams('');
     setAutocompleteInput('');
+    setDialogMode('select');
+    setQuickCalories('');
+    setQuickProtein('');
+    setQuickCarbs('');
+    setQuickFat('');
     setDialogOpen(true);
     loadFoodsForAutocomplete();
     getRecentFoods().then(setRecentFoods).catch(() => {});
@@ -188,6 +203,7 @@ export default function FoodLogPage() {
   const handleAdd = async () => {
     if (!selectedFood || saving) return;
     setSaving(true);
+    if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(30);
     try {
       await createLog({
         food_id: selectedFood.id,
@@ -204,11 +220,65 @@ export default function FoodLogPage() {
     }
   };
 
+  // Find or create a single sentinel food for quick-add entries
+  const sentinelIdRef = useRef<number | null>(null);
+  const getSentinelFoodId = async (): Promise<number> => {
+    if (sentinelIdRef.current) return sentinelIdRef.current;
+    const { data: existing } = await getFoods('Quick add', undefined, 1, 0);
+    const sentinel = existing.find(f => f.brand === QUICK_ADD_BRAND);
+    if (sentinel) {
+      sentinelIdRef.current = sentinel.id;
+      return sentinel.id;
+    }
+    const created = await createFood({
+      name: 'Quick add',
+      brand: QUICK_ADD_BRAND,
+      unit: 'g',
+      calories: 0,
+      protein: 0,
+      carbs: 0,
+      fat: 0,
+      serving_sizes: [],
+    });
+    sentinelIdRef.current = created.id;
+    return created.id;
+  };
+
+  const handleQuickAdd = async () => {
+    if (!quickCalories || saving) return;
+    setSaving(true);
+    if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(30);
+    try {
+      const foodId = await getSentinelFoodId();
+      await createLog({
+        food_id: foodId,
+        date,
+        meal_type: mealType,
+        quantity: 1,
+        cal_override: parseFloat(quickCalories) || 0,
+        protein_override: parseFloat(quickProtein) || 0,
+        carbs_override: parseFloat(quickCarbs) || 0,
+        fat_override: parseFloat(quickFat) || 0,
+      });
+      setDialogOpen(false);
+      loadLogs();
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const actionBusy = useRef(false);
   const handleDelete = async (id: number) => {
     if (actionBusy.current) return;
     actionBusy.current = true;
+    if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(30);
     try { await deleteLog(id); loadLogs(); } finally { actionBusy.current = false; }
+  };
+
+  const handleUpdateLog = async (id: number, updates: { serving_size_id?: number | null; quantity?: number; custom_grams?: number | null }) => {
+    if (actionBusy.current) return;
+    actionBusy.current = true;
+    try { await updateLog(id, updates); loadLogs(); } finally { actionBusy.current = false; }
   };
 
   const handleLogAgain = async (entry: FoodLogWithFood) => {
@@ -222,6 +292,10 @@ export default function FoodLogPage() {
         serving_size_id: entry.serving_size_id ?? null,
         quantity: entry.quantity,
         custom_grams: entry.custom_grams ?? null,
+        cal_override: entry.cal_override ?? null,
+        protein_override: entry.protein_override ?? null,
+        carbs_override: entry.carbs_override ?? null,
+        fat_override: entry.fat_override ?? null,
       });
       loadLogs();
     } finally { actionBusy.current = false; }
@@ -344,7 +418,7 @@ export default function FoodLogPage() {
             </Typography>
           </Box>
           {group.entries.map(entry => (
-            <FoodLogEntry key={entry.id} entry={entry} onDelete={handleDelete} onLogAgain={handleLogAgain} />
+            <FoodLogEntry key={entry.id} entry={entry} onDelete={handleDelete} onLogAgain={handleLogAgain} onUpdate={handleUpdateLog} />
           ))}
         </Box>
       ))}
@@ -375,68 +449,189 @@ export default function FoodLogPage() {
         <DialogTitle>Log Food</DialogTitle>
         <DialogContent>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
-            <Autocomplete<FoodOrCreate>
-              options={autocompleteOptions}
-              loading={foodsLoading}
-              getOptionLabel={(opt) =>
-                '_create' in opt
-                  ? `Add "${opt.inputValue}"`
-                  : `${opt.name}${opt.brand ? ` (${opt.brand})` : ''}`
-              }
-              groupBy={(opt) => ('_create' in opt ? '' : (opt as Food & { _group?: string })._group || '')}
-              renderGroup={(params) => params.group ? (
-                <li key={params.key}>
-                  <Typography variant="caption" sx={{ px: 2, py: 0.5, color: '#00E5FF', fontWeight: 600, display: 'block', bgcolor: 'rgba(0,229,255,0.06)' }}>
-                    {params.group}
-                  </Typography>
-                  <ul style={{ padding: 0 }}>{params.children}</ul>
-                </li>
-              ) : <li key={params.key}><ul style={{ padding: 0 }}>{params.children}</ul></li>}
-              filterOptions={(x) => x}
-              inputValue={autocompleteInput}
-              onInputChange={(_, value, reason) => {
-                if (reason !== 'reset') setAutocompleteInput(value);
-              }}
-              value={selectedFood}
-              onChange={(_, val) => {
-                if (!val) { handleFoodSelect(null); return; }
-                if ('_create' in val) {
-                  setAddFoodInitialName(val.inputValue);
-                  setAddFoodOpen(true);
-                } else {
-                  handleFoodSelect(val);
-                }
-              }}
-              isOptionEqualToValue={(opt, val) =>
-                !('_create' in opt) && !('_create' in val) && opt.id === val.id
-              }
-              renderOption={(props, opt) => (
-                <li {...props} key={'_create' in opt ? '__create__' : `${('_group' in opt ? opt._group : '')}-${opt.id}`}>
-                  {'_create' in opt
-                    ? <Box component="span" sx={{ color: 'primary.main', fontStyle: 'italic' }}>+ Add &quot;{opt.inputValue}&quot;</Box>
-                    : `${opt.name}${opt.brand ? ` (${opt.brand})` : ''}`
+            <ToggleButtonGroup
+              value={dialogMode}
+              exclusive
+              onChange={(_, v) => { if (v) setDialogMode(v); }}
+              size="small"
+              fullWidth
+            >
+              <ToggleButton value="select">Select Food</ToggleButton>
+              <ToggleButton value="quick">Quick Add</ToggleButton>
+            </ToggleButtonGroup>
+
+            {dialogMode === 'select' ? (
+              <>
+                <Autocomplete<FoodOrCreate>
+                  options={autocompleteOptions}
+                  loading={foodsLoading}
+                  getOptionLabel={(opt) =>
+                    '_create' in opt
+                      ? `Add "${opt.inputValue}"`
+                      : `${opt.name}${opt.brand ? ` (${opt.brand})` : ''}`
                   }
-                </li>
-              )}
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  label="Select Food"
-                  InputProps={{
-                    ...params.InputProps,
-                    endAdornment: (
-                      <>
-                        {foodsLoading && <CircularProgress size={18} />}
-                        {params.InputProps.endAdornment}
-                        <IconButton size="small" onClick={() => setScannerOpen(true)} title="Scan barcode">
-                          {scanLoading ? <CircularProgress size={18} /> : <QrCodeScannerIcon fontSize="small" />}
-                        </IconButton>
-                      </>
-                    ),
+                  groupBy={(opt) => ('_create' in opt ? '' : (opt as Food & { _group?: string })._group || '')}
+                  renderGroup={(params) => params.group ? (
+                    <li key={params.key}>
+                      <Typography variant="caption" sx={{ px: 2, py: 0.5, color: '#00E5FF', fontWeight: 600, display: 'block', bgcolor: 'rgba(0,229,255,0.06)' }}>
+                        {params.group}
+                      </Typography>
+                      <ul style={{ padding: 0 }}>{params.children}</ul>
+                    </li>
+                  ) : <li key={params.key}><ul style={{ padding: 0 }}>{params.children}</ul></li>}
+                  filterOptions={(x) => x}
+                  inputValue={autocompleteInput}
+                  onInputChange={(_, value, reason) => {
+                    if (reason !== 'reset') setAutocompleteInput(value);
                   }}
+                  value={selectedFood}
+                  onChange={(_, val) => {
+                    if (!val) { handleFoodSelect(null); return; }
+                    if ('_create' in val) {
+                      setAddFoodInitialName(val.inputValue);
+                      setAddFoodOpen(true);
+                    } else {
+                      handleFoodSelect(val);
+                    }
+                  }}
+                  isOptionEqualToValue={(opt, val) =>
+                    !('_create' in opt) && !('_create' in val) && opt.id === val.id
+                  }
+                  renderOption={(props, opt) => (
+                    <li {...props} key={'_create' in opt ? '__create__' : `${('_group' in opt ? opt._group : '')}-${opt.id}`}>
+                      {'_create' in opt
+                        ? <Box component="span" sx={{ color: 'primary.main', fontStyle: 'italic' }}>+ Add &quot;{opt.inputValue}&quot;</Box>
+                        : `${opt.name}${opt.brand ? ` (${opt.brand})` : ''}`
+                      }
+                    </li>
+                  )}
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      label="Select Food"
+                      InputProps={{
+                        ...params.InputProps,
+                        endAdornment: (
+                          <>
+                            {foodsLoading && <CircularProgress size={18} />}
+                            {params.InputProps.endAdornment}
+                            <IconButton size="small" onClick={() => setScannerOpen(true)} title="Scan barcode">
+                              {scanLoading ? <CircularProgress size={18} /> : <QrCodeScannerIcon fontSize="small" />}
+                            </IconButton>
+                          </>
+                        ),
+                      }}
+                    />
+                  )}
                 />
-              )}
-            />
+
+                {selectedFood && (
+                  <TextField
+                    select
+                    label="Serving Size"
+                    value={selectedServingSizeId}
+                    onChange={e => setSelectedServingSizeId(e.target.value)}
+                  >
+                    {(selectedFood.serving_sizes || []).map((ss: ServingSize) => (
+                      <MenuItem key={ss.id} value={ss.id.toString()}>
+                        {ss.name} ({ss.grams}{selectedFood.unit})
+                      </MenuItem>
+                    ))}
+                    <MenuItem value={CUSTOM_OPTION}>Custom</MenuItem>
+                  </TextField>
+                )}
+
+                {selectedFood && isCustom && (
+                  <TextField
+                    label={`Grams (${selectedFood.unit})`}
+                    type="number"
+                    value={customGrams}
+                    onChange={e => setCustomGrams(e.target.value)}
+                    slotProps={{ htmlInput: { step: 'any', min: '0' } }}
+                  />
+                )}
+
+                <TextField
+                  label="Quantity"
+                  type="number"
+                  value={quantity}
+                  onChange={e => setQuantity(e.target.value)}
+                  slotProps={{ htmlInput: { step: '0.25', min: '0.25' } }}
+                />
+
+                {selectedFood && (
+                  <Box sx={{ mt: 0.5 }}>
+                    <Typography variant="body2" color="text.secondary">
+                      {previewCalories} kcal
+                      {!isCustom && selectedServingSize
+                        ? ` (${parseFloat(quantity) || 0} x ${selectedServingSize.name})`
+                        : customGrams
+                          ? ` (${(parseFloat(customGrams) || 0) * (parseFloat(quantity) || 0)}${selectedFood.unit})`
+                          : ''}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      <Box component="span" sx={{ color: '#39FF14' }}>P: {previewProtein}g</Box>
+                      {' \u00B7 '}
+                      <Box component="span" sx={{ color: '#FFD600' }}>C: {previewCarbs}g</Box>
+                      {' \u00B7 '}
+                      <Box component="span" sx={{ color: '#FF6B35' }}>F: {previewFat}g</Box>
+                    </Typography>
+                  </Box>
+                )}
+              </>
+            ) : (
+              <>
+                <TextField
+                  label="Calories"
+                  type="number"
+                  value={quickCalories}
+                  onChange={e => setQuickCalories(e.target.value)}
+                  required
+                  slotProps={{ htmlInput: { step: 'any', min: '0' } }}
+                />
+                <Box sx={{ display: 'flex', gap: 1 }}>
+                  <TextField
+                    label="Protein (g)"
+                    type="number"
+                    value={quickProtein}
+                    onChange={e => setQuickProtein(e.target.value)}
+                    slotProps={{ htmlInput: { step: 'any', min: '0' } }}
+                    fullWidth
+                  />
+                  <TextField
+                    label="Carbs (g)"
+                    type="number"
+                    value={quickCarbs}
+                    onChange={e => setQuickCarbs(e.target.value)}
+                    slotProps={{ htmlInput: { step: 'any', min: '0' } }}
+                    fullWidth
+                  />
+                  <TextField
+                    label="Fat (g)"
+                    type="number"
+                    value={quickFat}
+                    onChange={e => setQuickFat(e.target.value)}
+                    slotProps={{ htmlInput: { step: 'any', min: '0' } }}
+                    fullWidth
+                  />
+                </Box>
+                {quickCalories && (
+                  <Box sx={{ mt: 0.5 }}>
+                    <Typography variant="body2" color="text.secondary">
+                      {parseFloat(quickCalories) || 0} kcal
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      <Box component="span" sx={{ color: '#39FF14' }}>P: {parseFloat(quickProtein) || 0}g</Box>
+                      {' \u00B7 '}
+                      <Box component="span" sx={{ color: '#FFD600' }}>C: {parseFloat(quickCarbs) || 0}g</Box>
+                      {' \u00B7 '}
+                      <Box component="span" sx={{ color: '#FF6B35' }}>F: {parseFloat(quickFat) || 0}g</Box>
+                    </Typography>
+                  </Box>
+                )}
+              </>
+            )}
+
             <TextField
               select
               label="Meal"
@@ -447,65 +642,15 @@ export default function FoodLogPage() {
                 <MenuItem key={mt.value} value={mt.value}>{mt.label}</MenuItem>
               ))}
             </TextField>
-
-            {selectedFood && (
-              <TextField
-                select
-                label="Serving Size"
-                value={selectedServingSizeId}
-                onChange={e => setSelectedServingSizeId(e.target.value)}
-              >
-                {(selectedFood.serving_sizes || []).map((ss: ServingSize) => (
-                  <MenuItem key={ss.id} value={ss.id.toString()}>
-                    {ss.name} ({ss.grams}{selectedFood.unit})
-                  </MenuItem>
-                ))}
-                <MenuItem value={CUSTOM_OPTION}>Custom</MenuItem>
-              </TextField>
-            )}
-
-            {selectedFood && isCustom && (
-              <TextField
-                label={`Grams (${selectedFood.unit})`}
-                type="number"
-                value={customGrams}
-                onChange={e => setCustomGrams(e.target.value)}
-                slotProps={{ htmlInput: { step: 'any', min: '0' } }}
-              />
-            )}
-
-            <TextField
-              label="Quantity"
-              type="number"
-              value={quantity}
-              onChange={e => setQuantity(e.target.value)}
-              slotProps={{ htmlInput: { step: '0.25', min: '0.25' } }}
-            />
-
-            {selectedFood && (
-              <Box sx={{ mt: 0.5 }}>
-                <Typography variant="body2" color="text.secondary">
-                  {previewCalories} kcal
-                  {!isCustom && selectedServingSize
-                    ? ` (${parseFloat(quantity) || 0} x ${selectedServingSize.name})`
-                    : customGrams
-                      ? ` (${(parseFloat(customGrams) || 0) * (parseFloat(quantity) || 0)}${selectedFood.unit})`
-                      : ''}
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  <Box component="span" sx={{ color: '#39FF14' }}>P: {previewProtein}g</Box>
-                  {' \u00B7 '}
-                  <Box component="span" sx={{ color: '#FFD600' }}>C: {previewCarbs}g</Box>
-                  {' \u00B7 '}
-                  <Box component="span" sx={{ color: '#FF6B35' }}>F: {previewFat}g</Box>
-                </Typography>
-              </Box>
-            )}
           </Box>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setDialogOpen(false)}>Cancel</Button>
-          <Button onClick={handleAdd} variant="contained" disabled={!selectedFood || saving}>Add</Button>
+          {dialogMode === 'select' ? (
+            <Button onClick={handleAdd} variant="contained" disabled={!selectedFood || saving}>Add</Button>
+          ) : (
+            <Button onClick={handleQuickAdd} variant="contained" disabled={!quickCalories || saving}>Add</Button>
+          )}
         </DialogActions>
       </Dialog>
     </Box>

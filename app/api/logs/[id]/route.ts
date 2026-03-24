@@ -24,7 +24,8 @@ export async function PUT(
   }
 
   const body = await request.json();
-  const { food_id, date, meal_type, serving_size_id, quantity, custom_grams } = body;
+  const { food_id, date, meal_type, serving_size_id, quantity, custom_grams,
+    cal_override, protein_override, carbs_override, fat_override } = body;
 
   const validMeals = ['breakfast', 'lunch', 'dinner', 'snack'];
   if (meal_type && !validMeals.includes(meal_type)) {
@@ -40,6 +41,10 @@ export async function PUT(
       serving_size_id: serving_size_id !== undefined ? (serving_size_id ?? null) : existing.serving_size_id,
       quantity: quantity ?? existing.quantity,
       custom_grams: custom_grams !== undefined ? (custom_grams ?? null) : existing.custom_grams,
+      cal_override: cal_override !== undefined ? (cal_override ?? null) : existing.cal_override,
+      protein_override: protein_override !== undefined ? (protein_override ?? null) : existing.protein_override,
+      carbs_override: carbs_override !== undefined ? (carbs_override ?? null) : existing.carbs_override,
+      fat_override: fat_override !== undefined ? (fat_override ?? null) : existing.fat_override,
     })
     .eq('id', id)
     .eq('user_id', user.id)

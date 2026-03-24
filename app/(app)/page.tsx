@@ -82,6 +82,7 @@ const MEAL_COLORS: Record<string, string> = {
 };
 
 function getLogCalories(entry: FoodLogWithFood): number {
+  if (entry.cal_override != null) return entry.cal_override;
   const gramsPerServing = entry.serving_size?.grams ?? entry.custom_grams ?? 0;
   const effectiveGrams = gramsPerServing * entry.quantity;
   const multiplier = effectiveGrams / 100;
@@ -401,6 +402,7 @@ export default function DashboardPage() {
                         cx="50%"
                         cy="50%"
                         outerRadius={45}
+                        innerRadius={30}
                         dataKey="value"
                         stroke="none"
                       >
@@ -660,7 +662,7 @@ export default function DashboardPage() {
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'center', mb: 0.5 }}>
               Calories
             </Typography>
-            <ResponsiveContainer width="100%" height={200}>
+            <ResponsiveContainer width="100%" height={220}>
               <BarChart data={weeklyData} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
                 <XAxis dataKey="name" tick={{ fill: 'rgba(255,255,255,0.6)', fontSize: 11 }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 11 }} axisLine={false} tickLine={false} domain={[0, Math.ceil(Math.max(calorieGoal, ...weeklyData.map(d => d.calories)) * 1.15)]} />
@@ -679,7 +681,15 @@ export default function DashboardPage() {
                     label={{ value: `Avg ${weeklyAvg.calories}`, position: 'insideBottomRight', fontSize: 11, fill: '#39FF14' }}
                   />
                 )}
-                <Bar dataKey="calories" name="Calories" fill="#00E5FF" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="calories" name="Calories" fill="#00E5FF" radius={[4, 4, 0, 0]} cursor="pointer" onClick={(data: { name: string }) => {
+                  if (!weeklyReport) return;
+                  const day = weeklyReport.days.find(d => {
+                    const dd = new Date(d.date + 'T00:00:00');
+                    const idx = (dd.getDay() + 6) % 7;
+                    return DAY_LABELS[idx] === data.name;
+                  });
+                  if (day) router.push(`/log?date=${day.date}`);
+                }} />
                 <Bar dataKey="ghost" fill="#00E5FF" opacity={0.15} radius={[4, 4, 0, 0]} legendType="none" name="" isAnimationActive={false} />
               </BarChart>
             </ResponsiveContainer>

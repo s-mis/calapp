@@ -22,6 +22,15 @@ export function computeTotals(logs: any[], date: string): DailyTotals {
   totals.entry_count = logs.length;
 
   for (const log of logs) {
+    // Override path: absolute values stored directly on the log entry
+    if (log.cal_override != null) {
+      totals.calories += log.cal_override;
+      totals.protein += log.protein_override || 0;
+      totals.carbs += log.carbs_override || 0;
+      totals.fat += log.fat_override || 0;
+      continue;
+    }
+
     const food = log.foods;
     if (!food) continue;
 

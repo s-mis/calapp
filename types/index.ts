@@ -1,3 +1,5 @@
+export const QUICK_ADD_BRAND = '__quick_add__';
+
 export interface ServingSize {
   id: number;
   food_id: number;
@@ -55,6 +57,10 @@ export interface FoodLog {
   serving_size_id: number | null;
   quantity: number;
   custom_grams: number | null;
+  cal_override: number | null;
+  protein_override: number | null;
+  carbs_override: number | null;
+  fat_override: number | null;
   created_at: string;
 }
 

@@ -76,6 +76,10 @@ export const createLog = (log: {
   serving_size_id?: number | null;
   quantity: number;
   custom_grams?: number | null;
+  cal_override?: number | null;
+  protein_override?: number | null;
+  carbs_override?: number | null;
+  fat_override?: number | null;
 }) =>
   request<FoodLog>('/logs', { method: 'POST', body: JSON.stringify(log) });
 
