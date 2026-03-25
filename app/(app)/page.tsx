@@ -19,8 +19,11 @@ import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import Checkbox from '@mui/material/Checkbox';
+import MenuItem from '@mui/material/MenuItem';
+import MonitorWeightIcon from '@mui/icons-material/MonitorWeight';
+import Divider from '@mui/material/Divider';
 import { getDashboard, updateSetting, deleteLog } from '@/services/api';
-import { DailyTotals, FoodLogWithFood, WeeklyReport } from '@/types';
+import { DailyTotals, FoodLogWithFood, WeeklyReport, WeightLog } from '@/types';
 import FoodLogEntry from '@/components/FoodLogEntry';
 import {
   RadialBarChart,
@@ -31,6 +34,8 @@ import {
   Cell,
   BarChart,
   Bar,
+  LineChart,
+  Line,
   XAxis,
   YAxis,
   ReferenceLine,
@@ -110,12 +115,18 @@ export default function DashboardPage() {
   const [carbsPct, setCarbsPct] = useState(40);
   const [fatPct, setFatPct] = useState(30);
   const [autoBalance, setAutoBalance] = useState(true);
+  const [recentWeights, setRecentWeights] = useState<WeightLog[]>([]);
+  const [weightGoal, setWeightGoal] = useState<number | null>(null);
+  const [weightUnit, setWeightUnit] = useState<string>('kg');
+  const [weightGoalInput, setWeightGoalInput] = useState('');
+  const [weightUnitInput, setWeightUnitInput] = useState<'lbs' | 'kg'>('kg');
 
   const loadData = async () => {
-    const { daily, logs, weekly, settings } = await getDashboard(today());
+    const { daily, logs, weekly, settings, recentWeights: weights } = await getDashboard(today());
     setTotals(daily);
     setAllLogs(logs);
     setWeeklyReport(weekly);
+    setRecentWeights(weights);
     if (settings.calorie_goal) {
       setCalorieGoal(Number(settings.calorie_goal) || DEFAULT_CALORIE_GOAL);
     }
@@ -127,6 +138,13 @@ export default function DashboardPage() {
     }
     if (settings.fat_goal) {
       setFatGoal(Number(settings.fat_goal) || DEFAULT_FAT_GOAL);
+    }
+    if (settings.weight_goal) {
+      setWeightGoal(Number(settings.weight_goal) || null);
+    }
+    if (settings.weight_unit) {
+      setWeightUnit(settings.weight_unit);
+      setWeightUnitInput(settings.weight_unit as 'lbs' | 'kg');
     }
   };
 
@@ -177,11 +195,15 @@ export default function DashboardPage() {
       protGrams > 0 ? updateSetting('protein_goal', String(protGrams)) : Promise.resolve(),
       carbsGrams > 0 ? updateSetting('carbs_goal', String(carbsGrams)) : Promise.resolve(),
       fatGrams > 0 ? updateSetting('fat_goal', String(fatGrams)) : Promise.resolve(),
+      weightGoalInput ? updateSetting('weight_goal', weightGoalInput) : Promise.resolve(),
+      updateSetting('weight_unit', weightUnitInput),
     ]);
     setCalorieGoal(calParsed);
     if (protGrams > 0) setProteinGoal(protGrams);
     if (carbsGrams > 0) setCarbsGoal(carbsGrams);
     if (fatGrams > 0) setFatGoal(fatGrams);
+    if (weightGoalInput) setWeightGoal(Number(weightGoalInput));
+    setWeightUnit(weightUnitInput);
     setGoalDialogOpen(false);
     setGoalSaving(false);
   };
@@ -305,6 +327,8 @@ export default function DashboardPage() {
                       setProteinGoalInput(String(proteinGoal));
                       setCarbsGoalInput(String(carbsGoal));
                       setFatGoalInput(String(fatGoal));
+                      setWeightGoalInput(weightGoal ? String(weightGoal) : '');
+                      setWeightUnitInput(weightUnit as 'lbs' | 'kg');
                       setGoalError('');
                       setGoalDialogOpen(true);
                     }}
@@ -581,6 +605,31 @@ export default function DashboardPage() {
             </>
           )}
 
+          <Divider sx={{ my: 2 }} />
+          <Typography variant="subtitle2" sx={{ mb: 1, display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            <MonitorWeightIcon sx={{ fontSize: 18, color: '#E040FB' }} /> Weight
+          </Typography>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <TextField
+              fullWidth
+              type="number"
+              label={`Goal Weight (${weightUnitInput})`}
+              value={weightGoalInput}
+              onChange={e => setWeightGoalInput(e.target.value)}
+              slotProps={{ htmlInput: { min: 1, step: 0.5 } }}
+            />
+            <TextField
+              select
+              label="Unit"
+              value={weightUnitInput}
+              onChange={e => setWeightUnitInput(e.target.value as 'lbs' | 'kg')}
+              sx={{ minWidth: 80 }}
+            >
+              <MenuItem value="lbs">lbs</MenuItem>
+              <MenuItem value="kg">kg</MenuItem>
+            </TextField>
+          </Box>
+
           {goalError && (
             <Typography variant="body2" color="error" sx={{ mt: 1.5 }}>
               {goalError}
@@ -592,6 +641,68 @@ export default function DashboardPage() {
           <Button variant="contained" onClick={handleGoalSave} disabled={goalSaving}>Save</Button>
         </DialogActions>
       </Dialog>
+
+      {/* Weight Summary Card */}
+      {recentWeights.length > 0 && (() => {
+        const todayWeight = recentWeights.find(w => w.date === today());
+        return (
+          <Card sx={{ mb: 2 }}>
+            <CardContent sx={{ py: 2, '&:last-child': { pb: 2 } }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                <MonitorWeightIcon sx={{ color: '#E040FB', fontSize: 20 }} />
+                <Typography variant="subtitle2">Weight</Typography>
+              </Box>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <Box sx={{ textAlign: 'center', minWidth: 80 }}>
+                  {todayWeight ? (
+                    <>
+                      <Typography variant="h5" fontWeight="bold" sx={{ color: '#E040FB' }}>
+                        {todayWeight.weight}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">{weightUnit}</Typography>
+                    </>
+                  ) : (
+                    <Typography variant="body2" color="text.secondary">Not logged today</Typography>
+                  )}
+                </Box>
+
+                {recentWeights.length >= 2 && (
+                  <Box sx={{ flex: 1 }}>
+                    <ResponsiveContainer width="100%" height={60}>
+                      <LineChart data={recentWeights}>
+                        <Line
+                          type="monotone"
+                          dataKey="weight"
+                          stroke="#E040FB"
+                          strokeWidth={1.5}
+                          dot={false}
+                        />
+                        {weightGoal && (
+                          <ReferenceLine y={weightGoal} stroke="#39FF14" strokeDasharray="3 3" />
+                        )}
+                        <YAxis domain={['auto', 'auto']} hide />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </Box>
+                )}
+
+                {weightGoal && todayWeight && (() => {
+                  const diff = todayWeight.weight - weightGoal;
+                  const color = Math.abs(diff) < 1 ? '#39FF14' : diff > 0 ? '#FF1744' : '#FFD600';
+                  return (
+                    <Box sx={{ textAlign: 'center', minWidth: 70 }}>
+                      <Typography variant="body2" fontWeight="bold" sx={{ color }}>
+                        {diff > 0 ? '+' : ''}{diff.toFixed(1)}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">from goal</Typography>
+                    </Box>
+                  );
+                })()}
+              </Box>
+            </CardContent>
+          </Card>
+        );
+      })()}
 
       {/* 4. This Week */}
       {weeklyData.length > 0 && (

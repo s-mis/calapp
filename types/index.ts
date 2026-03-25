@@ -112,6 +112,14 @@ export interface MonthlyReport {
   days: DailyTotals[];
 }
 
+export interface WeightLog {
+  id: number;
+  date: string;
+  weight: number;
+  notes: string | null;
+  created_at: string;
+}
+
 export interface PaginatedResponse<T> {
   data: T[];
   total: number;

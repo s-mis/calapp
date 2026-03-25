@@ -10,7 +10,7 @@ import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
 import MenuItem from '@mui/material/MenuItem';
-import Autocomplete from '@mui/material/Autocomplete';
+import Autocomplete, { createFilterOptions } from '@mui/material/Autocomplete';
 import IconButton from '@mui/material/IconButton';
 import Snackbar from '@mui/material/Snackbar';
 import CircularProgress from '@mui/material/CircularProgress';
@@ -23,8 +23,13 @@ import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import QrCodeScannerIcon from '@mui/icons-material/QrCodeScanner';
 import { useSearchParams } from 'next/navigation';
-import { getLogs, getFoods, createLog, deleteLog, updateLog, createFood, getRecentFoods } from '@/services/api';
-import { FoodLogWithFood, Food, MealType, ServingSize, QUICK_ADD_BRAND } from '@/types';
+import Card from '@mui/material/Card';
+import CardContent from '@mui/material/CardContent';
+import MonitorWeightIcon from '@mui/icons-material/MonitorWeight';
+import ExpandLessIcon from '@mui/icons-material/ExpandLess';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import { getLogs, getFoods, createLog, deleteLog, updateLog, createFood, getRecentFoods, getWeightLogs, createWeightLog, getSettings } from '@/services/api';
+import { FoodLogWithFood, Food, MealType, ServingSize, QUICK_ADD_BRAND, WeightLog } from '@/types';
 import FoodLogEntry from '@/components/FoodLogEntry';
 import AddFoodDialog, { FoodSaveData } from '@/components/AddFoodDialog';
 import BarcodeScannerModal from '@/components/BarcodeScannerModal';
@@ -33,7 +38,9 @@ import OFFSearchDialog from '@/components/OFFSearchDialog';
 import TravelExploreIcon from '@mui/icons-material/TravelExplore';
 import TodayIcon from '@mui/icons-material/Today';
 
-type FoodOrCreate = (Food & { _group?: string }) | { _create: true; inputValue: string };
+type FoodOrCreate = (Food & { _group?: string }) | { _create: true; inputValue: string; name: string } | { _offSearch: true; inputValue: string; name: string };
+
+const foodFilter = createFilterOptions<FoodOrCreate>();
 
 function getLogCalories(entry: FoodLogWithFood): number {
   if (entry.cal_override != null) return entry.cal_override;
@@ -91,6 +98,14 @@ export default function FoodLogPage() {
   const [autocompleteInput, setAutocompleteInput] = useState('');
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
 
+  // Weight state
+  const [todayWeight, setTodayWeight] = useState<WeightLog | null>(null);
+  const [weightInput, setWeightInput] = useState('');
+  const [weightNotes, setWeightNotes] = useState('');
+  const [weightUnit, setWeightUnit] = useState<string>('kg');
+  const [weightSaving, setWeightSaving] = useState(false);
+  const [weightExpanded, setWeightExpanded] = useState(false);
+
   // Quick Add state
   const [dialogMode, setDialogMode] = useState<'select' | 'quick'>('select');
   const [quickCalories, setQuickCalories] = useState('');
@@ -129,6 +144,28 @@ export default function FoodLogPage() {
   };
 
   useEffect(() => { setLogs([]); loadLogs(); }, [date]);
+
+  // Load weight for selected date
+  useEffect(() => {
+    getWeightLogs({ date }).then(data => {
+      if (data.length > 0) {
+        setTodayWeight(data[0]);
+        setWeightInput(String(data[0].weight));
+        setWeightNotes(data[0].notes || '');
+      } else {
+        setTodayWeight(null);
+        setWeightInput('');
+        setWeightNotes('');
+      }
+    }).catch(() => {});
+  }, [date]);
+
+  // Load weight unit preference once
+  useEffect(() => {
+    getSettings().then(s => {
+      if (s.weight_unit) setWeightUnit(s.weight_unit);
+    }).catch(() => {});
+  }, []);
 
   useEffect(() => {
     setFabAction(openDialog);
@@ -383,10 +420,7 @@ export default function FoodLogPage() {
         ...foods.filter(f => !recentIds.has(f.id)).map(f => ({ ...f, _group: 'All Foods' })),
       ];
     }
-    return [
-      ...foods,
-      ...(hasSearch ? [{ _create: true as const, inputValue: autocompleteInput.trim() }] : []),
-    ];
+    return [...foods];
   })();
 
   return (
@@ -417,6 +451,65 @@ export default function FoodLogPage() {
           </IconButton>
         )}
       </Box>
+
+      {/* Weight Entry Card */}
+      <Card sx={{ mb: 2 }}>
+        <CardContent sx={{ py: 1.5, '&:last-child': { pb: 1.5 } }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <MonitorWeightIcon sx={{ color: '#E040FB', fontSize: 20 }} />
+            <Typography variant="subtitle2" sx={{ flex: 1 }}>Weight</Typography>
+            {todayWeight && !weightExpanded && (
+              <Typography variant="body2" sx={{ color: '#E040FB', fontWeight: 600 }}>
+                {todayWeight.weight} {weightUnit}
+              </Typography>
+            )}
+            <IconButton size="small" onClick={() => setWeightExpanded(!weightExpanded)}>
+              {weightExpanded ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
+            </IconButton>
+          </Box>
+          {weightExpanded && (
+            <Box sx={{ mt: 1.5, display: 'flex', gap: 1, alignItems: 'flex-end' }}>
+              <TextField
+                label={`Weight (${weightUnit})`}
+                type="number"
+                size="small"
+                value={weightInput}
+                onChange={e => setWeightInput(e.target.value)}
+                slotProps={{ htmlInput: { step: '0.1', min: '0' } }}
+                sx={{ flex: 1 }}
+              />
+              <TextField
+                label="Notes"
+                size="small"
+                value={weightNotes}
+                onChange={e => setWeightNotes(e.target.value)}
+                sx={{ flex: 1 }}
+              />
+              <Button
+                variant="contained"
+                size="small"
+                disabled={!weightInput || weightSaving}
+                onClick={async () => {
+                  setWeightSaving(true);
+                  try {
+                    const saved = await createWeightLog({
+                      date,
+                      weight: parseFloat(weightInput),
+                      notes: weightNotes || null,
+                    });
+                    setTodayWeight(saved);
+                    setWeightExpanded(false);
+                  } finally {
+                    setWeightSaving(false);
+                  }
+                }}
+              >
+                {todayWeight ? 'Update' : 'Save'}
+              </Button>
+            </Box>
+          )}
+        </CardContent>
+      </Card>
 
       {logsLoading && <LinearProgress sx={{ mb: 2, borderRadius: 1 }} />}
 
@@ -500,12 +593,15 @@ export default function FoodLogPage() {
                 <Autocomplete<FoodOrCreate>
                   options={autocompleteOptions}
                   loading={foodsLoading}
-                  getOptionLabel={(opt) =>
-                    '_create' in opt
-                      ? `Add "${opt.inputValue}"`
-                      : `${opt.name}${opt.brand ? ` (${opt.brand})` : ''}`
-                  }
-                  groupBy={(opt) => ('_create' in opt ? '' : (opt as Food & { _group?: string })._group || '')}
+                  selectOnFocus
+                  clearOnBlur
+                  handleHomeEndKeys
+                  getOptionLabel={(opt) => {
+                    if ('_create' in opt) return opt.inputValue;
+                    if ('_offSearch' in opt) return opt.inputValue;
+                    return `${opt.name}${opt.brand ? ` (${opt.brand})` : ''}`;
+                  }}
+                  groupBy={(opt) => ('_create' in opt || '_offSearch' in opt ? '' : (opt as Food & { _group?: string })._group || '')}
                   renderGroup={(params) => params.group ? (
                     <li key={params.key}>
                       <Typography variant="caption" sx={{ px: 2, py: 0.5, color: '#00E5FF', fontWeight: 600, display: 'block', bgcolor: 'rgba(0,229,255,0.06)' }}>
@@ -514,7 +610,17 @@ export default function FoodLogPage() {
                       <ul style={{ padding: 0 }}>{params.children}</ul>
                     </li>
                   ) : <li key={params.key}><ul style={{ padding: 0 }}>{params.children}</ul></li>}
-                  filterOptions={(x) => x}
+                  filterOptions={(options, params) => {
+                    const filtered = foodFilter(options, params);
+                    const { inputValue } = params;
+                    if (inputValue.trim()) {
+                      filtered.push(
+                        { _offSearch: true as const, inputValue: inputValue.trim(), name: `Search OpenFoodFacts for "${inputValue.trim()}"` },
+                        { _create: true as const, inputValue: inputValue.trim(), name: `Add "${inputValue.trim()}"` },
+                      );
+                    }
+                    return filtered;
+                  }}
                   inputValue={autocompleteInput}
                   onInputChange={(_, value, reason) => {
                     if (reason !== 'reset') setAutocompleteInput(value);
@@ -522,7 +628,10 @@ export default function FoodLogPage() {
                   value={selectedFood}
                   onChange={(_, val) => {
                     if (!val) { handleFoodSelect(null); return; }
-                    if ('_create' in val) {
+                    if ('_offSearch' in val) {
+                      setOffSearchQuery(val.inputValue);
+                      setOffSearchOpen(true);
+                    } else if ('_create' in val) {
                       setAddFoodInitialName(val.inputValue);
                       setAddFoodOpen(true);
                     } else {
@@ -530,16 +639,28 @@ export default function FoodLogPage() {
                     }
                   }}
                   isOptionEqualToValue={(opt, val) =>
-                    !('_create' in opt) && !('_create' in val) && opt.id === val.id
+                    !('_create' in opt) && !('_create' in val) && !('_offSearch' in opt) && !('_offSearch' in val) && opt.id === val.id
                   }
-                  renderOption={(props, opt) => (
-                    <li {...props} key={'_create' in opt ? '__create__' : `${('_group' in opt ? opt._group : '')}-${opt.id}`}>
-                      {'_create' in opt
-                        ? <Box component="span" sx={{ color: 'primary.main', fontStyle: 'italic' }}>+ Add &quot;{opt.inputValue}&quot;</Box>
-                        : `${opt.name}${opt.brand ? ` (${opt.brand})` : ''}`
-                      }
-                    </li>
-                  )}
+                  renderOption={(props, opt) => {
+                    const { key, ...rest } = props;
+                    if ('_offSearch' in opt) return (
+                      <li key="__off__" {...rest}>
+                        <Box component="span" sx={{ display: 'flex', alignItems: 'center', gap: 0.5, color: '#00E5FF' }}>
+                          <TravelExploreIcon fontSize="small" /> Search OpenFoodFacts for &quot;{opt.inputValue}&quot;
+                        </Box>
+                      </li>
+                    );
+                    if ('_create' in opt) return (
+                      <li key="__create__" {...rest}>
+                        <Box component="span" sx={{ color: 'primary.main', fontStyle: 'italic' }}>+ Add &quot;{opt.inputValue}&quot;</Box>
+                      </li>
+                    );
+                    return (
+                      <li key={`${('_group' in opt ? opt._group : '')}-${opt.id}`} {...rest}>
+                        {`${opt.name}${opt.brand ? ` (${opt.brand})` : ''}`}
+                      </li>
+                    );
+                  }}
                   renderInput={(params) => (
                     <TextField
                       {...params}
@@ -560,24 +681,6 @@ export default function FoodLogPage() {
                   )}
                 />
 
-                {autocompleteInput.trim() && !selectedFood && (
-                  <Box
-                    onClick={() => {
-                      setOffSearchQuery(autocompleteInput.trim());
-                      setOffSearchOpen(true);
-                    }}
-                    sx={{
-                      display: 'flex', alignItems: 'center', gap: 0.5, px: 1, py: 0.75,
-                      color: '#00E5FF', cursor: 'pointer', borderRadius: 1,
-                      '&:hover': { bgcolor: 'rgba(0,229,255,0.08)' },
-                    }}
-                  >
-                    <TravelExploreIcon fontSize="small" />
-                    <Typography variant="body2">
-                      Search OpenFoodFacts for &quot;{autocompleteInput.trim()}&quot;
-                    </Typography>
-                  </Box>
-                )}
 
                 {selectedFood && (
                   <TextField

@@ -28,8 +28,14 @@ export async function GET(request: NextRequest) {
   const startDate = monday.toISOString().split('T')[0];
   const endDate = sunday.toISOString().split('T')[0];
 
+  // Compute 30-day weight range
+  const weightEnd = date;
+  const weightStartDate = new Date(d);
+  weightStartDate.setDate(weightStartDate.getDate() - 30);
+  const weightStart = weightStartDate.toISOString().split('T')[0];
+
   // Fire all queries in parallel (single auth validation!)
-  const [logsResult, weeklyLogsResult, settingsResult] = await Promise.all([
+  const [logsResult, weeklyLogsResult, settingsResult, weightResult] = await Promise.all([
     supabase
       .from('food_logs')
       .select('*, food:foods!inner(*), serving_size:serving_sizes(*)')
@@ -46,6 +52,13 @@ export async function GET(request: NextRequest) {
       .from('settings')
       .select('key, value')
       .eq('user_id', user.id),
+    supabase
+      .from('weight_logs')
+      .select('*')
+      .eq('user_id', user.id)
+      .gte('date', weightStart)
+      .lte('date', weightEnd)
+      .order('date', { ascending: true }),
   ]);
 
   // Process logs for display
@@ -114,5 +127,6 @@ export async function GET(request: NextRequest) {
     logs,
     weekly: { startDate, endDate, days: weeklyDays },
     settings,
+    recentWeights: weightResult.data || [],
   });
 }

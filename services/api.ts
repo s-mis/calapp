@@ -1,4 +1,4 @@
-import { Food, FoodLogWithFood, FoodLog, DailyTotals, WeeklyReport, MonthlyReport, PaginatedResponse } from '@/types';
+import { Food, FoodLogWithFood, FoodLog, DailyTotals, WeeklyReport, MonthlyReport, PaginatedResponse, WeightLog } from '@/types';
 import { supabase } from '@/lib/supabase/client';
 
 // Cache the access token to avoid repeated getSession() calls
@@ -94,7 +94,7 @@ export const getRecentFoods = () =>
 
 // Dashboard (combined endpoint)
 export const getDashboard = (date: string) =>
-  request<{ daily: DailyTotals; logs: FoodLogWithFood[]; weekly: WeeklyReport; settings: Record<string, string> }>(`/dashboard?date=${date}`);
+  request<{ daily: DailyTotals; logs: FoodLogWithFood[]; weekly: WeeklyReport; settings: Record<string, string>; recentWeights: WeightLog[] }>(`/dashboard?date=${date}`);
 
 // Reports
 export const getDailyReport = (date: string) =>
@@ -112,3 +112,23 @@ export const getSettings = () =>
 
 export const updateSetting = (key: string, value: string) =>
   request<{ key: string; value: string }>(`/settings/${key}`, { method: 'PUT', body: JSON.stringify({ value }) });
+
+// Weight Logs
+export const getWeightLogs = (params?: { date?: string; start?: string; end?: string; limit?: number }) => {
+  const qs = new URLSearchParams();
+  if (params?.date) qs.set('date', params.date);
+  if (params?.start) qs.set('start', params.start);
+  if (params?.end) qs.set('end', params.end);
+  if (params?.limit != null) qs.set('limit', String(params.limit));
+  const str = qs.toString();
+  return request<WeightLog[]>(`/weight-logs${str ? `?${str}` : ''}`);
+};
+
+export const createWeightLog = (log: { date: string; weight: number; notes?: string | null }) =>
+  request<WeightLog>('/weight-logs', { method: 'POST', body: JSON.stringify(log) });
+
+export const updateWeightLog = (id: number, log: Partial<{ weight: number; notes: string | null; date: string }>) =>
+  request<WeightLog>(`/weight-logs/${id}`, { method: 'PUT', body: JSON.stringify(log) });
+
+export const deleteWeightLog = (id: number) =>
+  request<void>(`/weight-logs/${id}`, { method: 'DELETE' });
