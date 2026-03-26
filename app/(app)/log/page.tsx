@@ -143,21 +143,27 @@ export default function FoodLogPage() {
     }
   };
 
-  useEffect(() => { setLogs([]); loadLogs(); }, [date]);
-
-  // Load weight for selected date
+  // Load logs + weight in parallel on date change
   useEffect(() => {
-    getWeightLogs({ date }).then(data => {
-      if (data.length > 0) {
-        setTodayWeight(data[0]);
-        setWeightInput(String(data[0].weight));
-        setWeightNotes(data[0].notes || '');
+    setLogs([]);
+    setLogsLoading(true);
+    Promise.all([
+      getLogs(date),
+      getWeightLogs({ date }),
+    ]).then(([logsData, weightData]) => {
+      setLogs(logsData);
+      if (weightData.length > 0) {
+        setTodayWeight(weightData[0]);
+        setWeightInput(String(weightData[0].weight));
+        setWeightNotes(weightData[0].notes || '');
       } else {
         setTodayWeight(null);
         setWeightInput('');
         setWeightNotes('');
       }
-    }).catch(() => {});
+    }).catch(() => {}).finally(() => {
+      setLogsLoading(false);
+    });
   }, [date]);
 
   // Load weight unit preference once

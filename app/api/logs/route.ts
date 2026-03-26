@@ -79,11 +79,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Either serving_size_id or custom_grams must be provided' }, { status: 400 });
   }
 
-  const { data: food } = await supabase.from('foods').select('id').eq('id', food_id).single();
-  if (!food) {
-    return NextResponse.json({ error: 'Food not found' }, { status: 400 });
-  }
-
+  // FK constraint on food_id ensures food exists; skip separate validation query
   const { data: log, error } = await supabase
     .from('food_logs')
     .insert({

@@ -7,10 +7,10 @@ export async function GET(request: NextRequest) {
   if ('error' in auth) return auth.error;
   const { user, supabase } = auth;
 
-  // Get distinct food_ids ordered by most recent log
+  // Single query: get recent logs with foods + serving sizes joined
   const { data: recentLogs, error } = await supabase
     .from('food_logs')
-    .select('food_id, created_at')
+    .select('food_id, created_at, foods(*, serving_sizes(*))')
     .eq('user_id', user.id)
     .order('created_at', { ascending: false })
     .limit(100);
@@ -20,42 +20,23 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 
-  // Deduplicate to get unique food_ids in recency order
+  // Deduplicate to get unique foods in recency order
   const seen = new Set<number>();
-  const foodIds: number[] = [];
-  for (const log of recentLogs || []) {
-    if (!seen.has(log.food_id)) {
-      seen.add(log.food_id);
-      foodIds.push(log.food_id);
-    }
-    if (foodIds.length >= 10) break;
-  }
-
-  if (foodIds.length === 0) {
-    return NextResponse.json([]);
-  }
-
-  // Fetch the full food objects with serving sizes
-  const { data: foods, error: foodsError } = await supabase
-    .from('foods')
-    .select('*, serving_sizes(*)')
-    .in('id', foodIds);
-
-  if (foodsError) {
-    console.error('Error fetching foods:', foodsError);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
-  }
-
-  // Sort by original recency order and sort serving sizes
-  const foodMap = new Map((foods || []).map(f => [f.id, f]));
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const result = foodIds.map(id => foodMap.get(id)).filter(Boolean).map((f: any) => {
-    if (f.serving_sizes) {
+  const result: any[] = [];
+  for (const log of recentLogs || []) {
+    if (!log.foods || seen.has(log.food_id)) continue;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const food = log.foods as any;
+    if (food.brand === '__quick_add__') continue;
+    seen.add(log.food_id);
+    if (food.serving_sizes) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      f.serving_sizes.sort((a: any, b: any) => (a.sort_order - b.sort_order) || (a.id - b.id));
+      food.serving_sizes.sort((a: any, b: any) => (a.sort_order - b.sort_order) || (a.id - b.id));
     }
-    return f;
-  });
+    result.push(food);
+    if (result.length >= 10) break;
+  }
 
   return NextResponse.json(result);
 }

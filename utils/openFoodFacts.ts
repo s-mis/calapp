@@ -27,7 +27,7 @@ function mapProductToFoodSaveData(p: any, barcode?: string): FoodSaveData {
 
   return {
     name: (p.product_name as string | undefined) || '',
-    brand: (p.brands as string | undefined) || null,
+    brand: (Array.isArray(p.brands) ? p.brands.join(', ') : p.brands as string | undefined) || null,
     unit: 'g',
     calories: toVal(n['energy-kcal_100g']),
     protein: toVal(n['proteins_100g']),
@@ -46,9 +46,14 @@ function mapProductToFoodSaveData(p: any, barcode?: string): FoodSaveData {
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
+const OFF_HEADERS = {
+  'User-Agent': 'CalApp/1.0 (https://github.com/user/calapp)',
+};
+
 export async function fetchByBarcode(barcode: string): Promise<FoodSaveData | null> {
   const res = await fetch(
-    `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(barcode)}.json`
+    `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(barcode)}.json`,
+    { headers: OFF_HEADERS }
   );
   if (!res.ok) return null;
 
@@ -58,23 +63,40 @@ export async function fetchByBarcode(barcode: string): Promise<FoodSaveData | nu
   return mapProductToFoodSaveData(data.product ?? {}, barcode);
 }
 
-export async function searchByText(query: string): Promise<FoodSaveData[]> {
+export type OFFSearchResult = FoodSaveData & { image_url?: string | null };
+
+export async function searchByText(query: string): Promise<OFFSearchResult[]> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10000);
 
   try {
-    const res = await fetch(
-      `https://world.openfoodfacts.org/api/v2/search?search_terms=${encodeURIComponent(query)}&page_size=10&fields=product_name,brands,nutriments,serving_quantity,serving_size,code`,
-      { signal: controller.signal }
-    );
-    if (!res.ok) return [];
+    const res = await fetch('/api/off-search', {
+      method: 'POST',
+      signal: controller.signal,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        q: query.trim(),
+        index_id: 'off',
+        langs: ['en'],
+        page_size: 10,
+        fields: [
+          'code', 'product_name', 'brands',
+          'serving_size', 'serving_quantity', 'nutriments',
+          'image_front_small_url',
+        ],
+      }),
+    });
+    if (!res.ok) throw new Error(`OFF_${res.status}`);
 
     const data = await res.json();
-    const products = data.products ?? [];
+    const hits = data.hits ?? [];
 
-    return products
-      .map((p: Record<string, unknown>) => mapProductToFoodSaveData(p))
-      .filter((f: FoodSaveData) => f.name && f.name.trim().length > 0);
+    return hits
+      .map((p: Record<string, unknown>) => ({
+        ...mapProductToFoodSaveData(p),
+        image_url: (p.image_front_small_url as string | undefined) || null,
+      }))
+      .filter((f: OFFSearchResult) => f.name && f.name.trim().length > 0);
   } finally {
     clearTimeout(timeout);
   }

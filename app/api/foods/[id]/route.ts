@@ -31,11 +31,6 @@ export async function PUT(
   const { id } = await params;
   const foodId = Number(id);
 
-  const { data: existing } = await supabase.from('foods').select('id').eq('id', foodId).single();
-  if (!existing) {
-    return NextResponse.json({ error: 'Food not found' }, { status: 404 });
-  }
-
   const body = await request.json();
   const {
     name, brand, unit,
@@ -54,7 +49,8 @@ export async function PUT(
 
   const foodUnit = unit === 'ml' ? 'ml' : 'g';
 
-  const { error: updateError } = await supabase
+  // Update and verify existence in one query
+  const { data: updated, error: updateError } = await supabase
     .from('foods')
     .update({
       name, brand: brand ?? null, unit: foodUnit,
@@ -68,9 +64,14 @@ export async function PUT(
       magnesium: magnesium ?? null, zinc: zinc ?? null, phosphorus: phosphorus ?? null,
       barcode: barcode ?? null,
     })
-    .eq('id', foodId);
+    .eq('id', foodId)
+    .select('id')
+    .single();
 
   if (updateError) {
+    if (updateError.code === 'PGRST116') {
+      return NextResponse.json({ error: 'Food not found' }, { status: 404 });
+    }
     console.error('Error updating food:', updateError);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
@@ -168,15 +169,14 @@ export async function DELETE(
 
   const { id } = await params;
 
-  const { data: existing } = await supabase.from('foods').select('id').eq('id', id).single();
-  if (!existing) {
-    return NextResponse.json({ error: 'Food not found' }, { status: 404 });
-  }
-
-  const { error } = await supabase.from('foods').delete().eq('id', id);
+  const { data, error } = await supabase.from('foods').delete().eq('id', id).select('id');
   if (error) {
     console.error('Error deleting food:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
+
+  if (!data || data.length === 0) {
+    return NextResponse.json({ error: 'Food not found' }, { status: 404 });
   }
 
   return new NextResponse(null, { status: 204 });

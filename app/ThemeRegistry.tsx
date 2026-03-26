@@ -25,7 +25,7 @@ const theme = createTheme({
     MuiCard: {
       defaultProps: { elevation: 0 },
       styleOverrides: {
-        root: { border: '1px solid #2A2A2A' },
+        root: { border: '1px solid rgba(255,255,255,0.06)', borderTop: '1px solid rgba(255,255,255,0.12)' },
       },
     },
     MuiAppBar: {

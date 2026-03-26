@@ -1,18 +1,18 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, Fragment } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import TextField from '@mui/material/TextField';
 import List from '@mui/material/List';
 import ListItem from '@mui/material/ListItem';
-import ListItemSecondaryAction from '@mui/material/ListItemSecondaryAction';
 import IconButton from '@mui/material/IconButton';
 import EditIcon from '@mui/icons-material/Edit';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import { useFab } from '@/context/FabContext';
 import DeleteIcon from '@mui/icons-material/Delete';
-import Card from '@mui/material/Card';
+import CloseIcon from '@mui/icons-material/Close';
+import ListSubheader from '@mui/material/ListSubheader';
 import Chip from '@mui/material/Chip';
 import MenuItem from '@mui/material/MenuItem';
 import InputAdornment from '@mui/material/InputAdornment';
@@ -21,8 +21,9 @@ import SortIcon from '@mui/icons-material/Sort';
 import Snackbar from '@mui/material/Snackbar';
 import CircularProgress from '@mui/material/CircularProgress';
 import QrCodeScannerIcon from '@mui/icons-material/QrCodeScanner';
-import { getFoods, createFood, updateFood, deleteFood } from '@/services/api';
-import { Food } from '@/types';
+import Collapse from '@mui/material/Collapse';
+import { getFoods, getFood, createFood, updateFood, deleteFood } from '@/services/api';
+import { Food, QUICK_ADD_BRAND } from '@/types';
 import AddFoodDialog, { FoodSaveData } from '@/components/AddFoodDialog';
 import BarcodeScannerModal from '@/components/BarcodeScannerModal';
 import { fetchByBarcode } from '@/utils/openFoodFacts';
@@ -48,9 +49,10 @@ export default function FoodsPage() {
     setLoading(true);
     try {
       const { data, total: t } = await getFoods(search || undefined, undefined, PAGE_SIZE, offset, sort);
-      const filtered = filter === 'all' ? data
-        : filter === 'high_protein' ? data.filter(f => (f.protein ?? 0) >= 15)
-        : data.filter(f => (f.calories ?? Infinity) <= 100);
+      const nonQuickAdd = data.filter(f => f.brand !== QUICK_ADD_BRAND);
+      const filtered = filter === 'all' ? nonQuickAdd
+        : filter === 'high_protein' ? nonQuickAdd.filter(f => (f.protein ?? 0) >= 15)
+        : nonQuickAdd.filter(f => (f.calories ?? Infinity) <= 100);
       setFoods(prev => append ? [...prev, ...filtered] : filtered);
       setTotal(filter === 'all' ? t : filtered.length);
     } finally {
@@ -102,8 +104,10 @@ export default function FoodsPage() {
     loadFoods(0, false);
   };
 
-  const handleEdit = (food: Food) => {
-    setEditingFood(food);
+  const handleEdit = async (food: Food) => {
+    // Fetch full food data (list view omits micronutrient columns)
+    const full = await getFood(food.id);
+    setEditingFood(full);
     setPrefill(null);
     setDialogOpen(true);
   };
@@ -126,10 +130,50 @@ export default function FoodsPage() {
   };
 
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+
+  // Swipe-to-delete state (touch devices)
+  const [swipedId, setSwipedId] = useState<number | null>(null);
+  const [swipeOffset, setSwipeOffset] = useState(0);
+  const swipeTouchRef = useRef<{ x: number; y: number; swiping: boolean; id: number } | null>(null);
+
+  const handleRowTouchStart = (e: React.TouchEvent, foodId: number) => {
+    // Close any other swiped row
+    if (swipedId && swipedId !== foodId) { setSwipedId(null); setSwipeOffset(0); }
+    swipeTouchRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, swiping: false, id: foodId };
+  };
+  const handleRowTouchMove = (e: React.TouchEvent) => {
+    if (!swipeTouchRef.current) return;
+    const dx = e.touches[0].clientX - swipeTouchRef.current.x;
+    const dy = e.touches[0].clientY - swipeTouchRef.current.y;
+    if (!swipeTouchRef.current.swiping && Math.abs(dy) > Math.abs(dx)) { swipeTouchRef.current = null; return; }
+    swipeTouchRef.current.swiping = true;
+    setSwipedId(swipeTouchRef.current.id);
+    setSwipeOffset(Math.max(Math.min(dx, 0), -100));
+  };
+  const handleRowTouchEnd = () => {
+    if (!swipeTouchRef.current) return;
+    if (swipeOffset < -50) {
+      setSwipeOffset(-100);
+    } else {
+      setSwipedId(null);
+      setSwipeOffset(0);
+    }
+    swipeTouchRef.current = null;
+  };
+  const handleSwipeDelete = async (id: number) => {
+    if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(30);
+    setSwipedId(null);
+    setSwipeOffset(0);
+    await deleteFood(id);
+    setFoods([]);
+    loadFoods(0, false);
+  };
 
   const handleDelete = async (id: number) => {
     if (confirmDeleteId === id) {
       setConfirmDeleteId(null);
+      if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(30);
       await deleteFood(id);
       setFoods([]);
       loadFoods(0, false);
@@ -160,6 +204,13 @@ export default function FoodsPage() {
               startAdornment: (
                 <InputAdornment position="start"><SearchIcon /></InputAdornment>
               ),
+              endAdornment: search ? (
+                <InputAdornment position="end">
+                  <IconButton size="small" onClick={() => setSearch('')} edge="end">
+                    <CloseIcon fontSize="small" />
+                  </IconButton>
+                </InputAdornment>
+              ) : null,
             },
           }}
         />
@@ -219,8 +270,13 @@ export default function FoodsPage() {
         </Typography>
       )}
 
-      <Card>
-        <List disablePadding>
+      {foods.length > 0 && (
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+          Showing {foods.length} of {total} foods
+        </Typography>
+      )}
+
+      <List sx={{ bgcolor: 'background.paper', borderRadius: 1 }}>
           {foods.map((food, i) => {
             const p = food.protein ?? 0;
             const c = food.carbs ?? 0;
@@ -228,61 +284,130 @@ export default function FoodsPage() {
             const macroTotal = p + c + f;
             const hasMacros = food.protein != null && food.carbs != null && food.fat != null;
             const defaultSs = food.serving_sizes?.find(ss => ss.is_default) || food.serving_sizes?.[0];
+            const showHeader = sort === 'name' && (i === 0 || food.name[0]?.toUpperCase() !== foods[i - 1].name[0]?.toUpperCase());
+            const isSwiped = swipedId === food.id;
+            const isExpanded = expandedId === food.id;
             return (
-              <ListItem key={food.id} divider={i < foods.length - 1} sx={{ alignItems: 'flex-start', gap: 1.5 }}>
-                <Box sx={{ flex: 1, minWidth: 0, py: 0.5 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                    <Typography variant="subtitle2" noWrap sx={{ color: '#00E5FF' }}>
-                      {food.name}
-                    </Typography>
-                    {!hasMacros && (
-                      <WarningAmberIcon sx={{ fontSize: 14, color: '#FFD600' }} titleAccess="Missing macro data" />
-                    )}
-                  </Box>
-                  {food.brand && (
-                    <Typography variant="caption" color="text.secondary" noWrap>{food.brand}</Typography>
-                  )}
-                  <Box sx={{ display: 'flex', gap: 0.75, mt: 0.5, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <Typography variant="caption" sx={{ color: '#39FF14' }}>P: {p}g</Typography>
-                    <Typography variant="caption" sx={{ color: '#FFD600' }}>C: {c}g</Typography>
-                    <Typography variant="caption" sx={{ color: '#FF6B35' }}>F: {f}g</Typography>
-                    {defaultSs && defaultSs.name !== `100${food.unit}` && (
-                      <Typography variant="caption" color="text.secondary">
-                        {defaultSs.name} ({defaultSs.grams}{food.unit})
-                      </Typography>
-                    )}
-                  </Box>
-                  {/* Mini macro-ratio bar */}
-                  {macroTotal > 0 && (
-                    <Box sx={{ display: 'flex', height: 3, borderRadius: 1.5, overflow: 'hidden', mt: 0.5, maxWidth: 120 }}>
-                      <Box sx={{ width: `${(p / macroTotal) * 100}%`, bgcolor: '#39FF14' }} />
-                      <Box sx={{ width: `${(c / macroTotal) * 100}%`, bgcolor: '#FFD600' }} />
-                      <Box sx={{ width: `${(f / macroTotal) * 100}%`, bgcolor: '#FF6B35' }} />
-                    </Box>
-                  )}
-                </Box>
-                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 48, pt: 0.5 }}>
-                  <Typography variant="h6" fontWeight="bold" sx={{ lineHeight: 1, color: '#00E5FF' }}>
-                    {food.calories ?? '—'}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">kcal</Typography>
-                </Box>
-                <ListItemSecondaryAction>
-                  <IconButton size="small" onClick={() => handleEdit(food)}><EditIcon fontSize="small" /></IconButton>
-                  <IconButton
-                    size="small"
-                    onClick={() => handleDelete(food.id)}
-                    color="error"
-                    sx={confirmDeleteId === food.id ? { bgcolor: 'error.main', color: 'white', '&:hover': { bgcolor: 'error.dark' } } : {}}
-                  >
+              <Fragment key={food.id}>
+                {showHeader && (
+                  <ListSubheader sx={{ bgcolor: 'rgba(0,229,255,0.05)', color: '#00E5FF', lineHeight: '32px' }}>
+                    {food.name[0]?.toUpperCase()}
+                  </ListSubheader>
+                )}
+                <Box sx={{ position: 'relative', overflow: 'hidden', borderBottom: i < foods.length - 1 ? '1px solid rgba(255,255,255,0.06)' : 'none' }}>
+                  {/* Swipe delete panel (touch devices) */}
+                  <Box sx={{
+                    position: 'absolute', right: 0, top: 0, bottom: 0, width: 100,
+                    bgcolor: '#FF1744', display: 'flex', flexDirection: 'column',
+                    alignItems: 'center', justifyContent: 'center', gap: 0.25,
+                    cursor: 'pointer', color: 'white',
+                  }} onClick={() => handleSwipeDelete(food.id)}>
                     <DeleteIcon fontSize="small" />
-                  </IconButton>
-                </ListItemSecondaryAction>
-              </ListItem>
+                    <Typography variant="caption" fontWeight={600}>Delete</Typography>
+                  </Box>
+                  <ListItem
+                    onTouchStart={(e) => handleRowTouchStart(e, food.id)}
+                    onTouchMove={handleRowTouchMove}
+                    onTouchEnd={handleRowTouchEnd}
+                    onClick={() => { if (!swipeTouchRef.current?.swiping) setExpandedId(prev => prev === food.id ? null : food.id); }}
+                    sx={{
+                      alignItems: 'flex-start',
+                      gap: 1.5,
+                      cursor: 'pointer',
+                      transform: `translateX(${isSwiped ? swipeOffset : 0}px)`,
+                      transition: swipeTouchRef.current?.swiping ? 'none' : 'transform 0.25s ease',
+                      bgcolor: 'background.paper',
+                      position: 'relative',
+                      zIndex: 1,
+                      '@media (hover: hover)': {
+                        '& .food-actions': { opacity: 0, transition: 'opacity 0.2s' },
+                        '&:hover .food-actions': { opacity: 1 },
+                      },
+                    }}>
+                    <Box sx={{ flex: 1, minWidth: 0, py: 0.5 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                        <Typography variant="subtitle2" noWrap sx={{ color: '#00E5FF' }}>
+                          {food.name}
+                        </Typography>
+                        {!hasMacros && (
+                          <WarningAmberIcon sx={{ fontSize: 14, color: '#FFD600' }} titleAccess="Missing macro data" />
+                        )}
+                      </Box>
+                      {food.brand && (
+                        <Typography variant="caption" color="text.secondary" noWrap>{food.brand}</Typography>
+                      )}
+                      <Box sx={{ display: 'flex', gap: 0.75, mt: 0.5, alignItems: 'center', flexWrap: 'wrap' }}>
+                        <Typography variant="caption" sx={{ color: '#39FF14' }}>P: {p}g</Typography>
+                        <Typography variant="caption" sx={{ color: '#FFD600' }}>C: {c}g</Typography>
+                        <Typography variant="caption" sx={{ color: '#FF6B35' }}>F: {f}g</Typography>
+                        {defaultSs && defaultSs.name !== `100${food.unit}` && (
+                          <Typography variant="caption" color="text.secondary">
+                            {defaultSs.name} ({defaultSs.grams}{food.unit})
+                          </Typography>
+                        )}
+                      </Box>
+                      {macroTotal > 0 && (
+                        <Box sx={{ display: 'flex', height: 3, borderRadius: 1.5, overflow: 'hidden', mt: 0.5, maxWidth: 120 }}>
+                          <Box sx={{ width: `${(p / macroTotal) * 100}%`, bgcolor: '#39FF14' }} />
+                          <Box sx={{ width: `${(c / macroTotal) * 100}%`, bgcolor: '#FFD600' }} />
+                          <Box sx={{ width: `${(f / macroTotal) * 100}%`, bgcolor: '#FF6B35' }} />
+                        </Box>
+                      )}
+                    </Box>
+                    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 48, pt: 0.5 }}>
+                      <Typography variant="h6" fontWeight="bold" sx={{ lineHeight: 1, color: '#00E5FF' }}>
+                        {food.calories ?? '—'}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">kcal</Typography>
+                    </Box>
+                    <Box className="food-actions" sx={{ display: 'flex', alignItems: 'center' }} onClick={(e) => e.stopPropagation()}>
+                      <IconButton size="small" onClick={() => handleEdit(food)}><EditIcon fontSize="small" /></IconButton>
+                      <IconButton
+                        size="small"
+                        onClick={() => handleDelete(food.id)}
+                        color="error"
+                        sx={confirmDeleteId === food.id ? { bgcolor: 'error.main', color: 'white', '&:hover': { bgcolor: 'error.dark' } } : {}}
+                      >
+                        <DeleteIcon fontSize="small" />
+                      </IconButton>
+                    </Box>
+                  </ListItem>
+                  {/* Expandable nutrient detail */}
+                  <Collapse in={isExpanded} sx={{ bgcolor: 'rgba(0,229,255,0.03)' }}>
+                    <Box sx={{ px: 2, py: 1.5, display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 1 }}>
+                      {[
+                        { label: 'Calories', value: food.calories, unit: 'kcal', color: '#00E5FF' },
+                        { label: 'Protein', value: food.protein, unit: 'g', color: '#39FF14' },
+                        { label: 'Carbs', value: food.carbs, unit: 'g', color: '#FFD600' },
+                        { label: 'Fat', value: food.fat, unit: 'g', color: '#FF6B35' },
+                        { label: 'Fiber', value: food.fiber, unit: 'g', color: '#E040FB' },
+                        { label: 'Sugar', value: food.sugar, unit: 'g', color: '#FFD600' },
+                      ].map(n => (
+                        <Box key={n.label}>
+                          <Typography variant="caption" color="text.secondary">{n.label}</Typography>
+                          <Typography variant="body2" sx={{ color: n.color, fontWeight: 600 }}>
+                            {n.value != null ? `${n.value}${n.unit}` : '—'}
+                          </Typography>
+                        </Box>
+                      ))}
+                    </Box>
+                    {food.serving_sizes && food.serving_sizes.length > 0 && (
+                      <Box sx={{ px: 2, pb: 1.5 }}>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>Serving sizes</Typography>
+                        <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+                          {food.serving_sizes.map(ss => (
+                            <Chip key={ss.id} label={`${ss.name} (${ss.grams}${food.unit})`} size="small" variant="outlined"
+                              sx={{ color: ss.is_default ? '#00E5FF' : 'text.secondary', borderColor: ss.is_default ? '#00E5FF' : undefined }} />
+                          ))}
+                        </Box>
+                      </Box>
+                    )}
+                  </Collapse>
+                </Box>
+              </Fragment>
             );
           })}
         </List>
-      </Card>
 
       {/* Scroll sentinel + loading spinner */}
       <div ref={sentinelRef} />

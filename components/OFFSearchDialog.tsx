@@ -14,7 +14,8 @@ import ListItemButton from '@mui/material/ListItemButton';
 import CircularProgress from '@mui/material/CircularProgress';
 import Chip from '@mui/material/Chip';
 import type { FoodSaveData } from '@/components/AddFoodDialog';
-import { searchByText } from '@/utils/openFoodFacts';
+import { searchByText, type OFFSearchResult } from '@/utils/openFoodFacts';
+import Avatar from '@mui/material/Avatar';
 
 interface Props {
   open: boolean;
@@ -26,7 +27,7 @@ interface Props {
 
 export default function OFFSearchDialog({ open, onClose, onSelect, onManualAdd, initialQuery }: Props) {
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<FoodSaveData[]>([]);
+  const [results, setResults] = useState<OFFSearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searched, setSearched] = useState(false);
@@ -40,8 +41,12 @@ export default function OFFSearchDialog({ open, onClose, onSelect, onManualAdd, 
       const data = await searchByText(q.trim());
       setResults(data);
       setSearched(true);
-    } catch {
-      setError('Search failed. Please try again.');
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : '';
+      const isServerError = msg.includes('OFF_5') || msg.includes('AbortError') || msg.includes('abort');
+      setError(isServerError
+        ? 'The OpenFoodFacts server is temporarily overloaded. This is normal — their API has limited capacity.'
+        : 'Search failed. Please check your connection and try again.');
       setResults([]);
     } finally {
       setLoading(false);
@@ -90,7 +95,13 @@ export default function OFFSearchDialog({ open, onClose, onSelect, onManualAdd, 
         )}
 
         {error && (
-          <Typography color="error" sx={{ textAlign: 'center', py: 2 }}>{error}</Typography>
+          <Box sx={{ textAlign: 'center', py: 2 }}>
+            <Typography color="error" variant="body2" sx={{ mb: 0.5 }}>{error}</Typography>
+            <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1, mt: 1.5 }}>
+              <Button size="small" variant="outlined" onClick={() => doSearch(query)}>Retry</Button>
+              <Button size="small" onClick={() => onManualAdd(query)}>Add manually</Button>
+            </Box>
+          </Box>
         )}
 
         {!loading && !error && searched && results.length === 0 && (
@@ -106,8 +117,15 @@ export default function OFFSearchDialog({ open, onClose, onSelect, onManualAdd, 
               <ListItemButton
                 key={i}
                 onClick={() => onSelect(food)}
-                sx={{ borderRadius: 1, mb: 0.5, px: 1.5, py: 1 }}
+                sx={{ borderRadius: 1, mb: 0.5, px: 1.5, py: 1, alignItems: 'flex-start' }}
               >
+                <Avatar
+                  variant="rounded"
+                  src={food.image_url || undefined}
+                  sx={{ width: 40, height: 40, mr: 1.5, mt: 0.25, bgcolor: 'action.hover', fontSize: '0.75rem' }}
+                >
+                  {!food.image_url ? '?' : null}
+                </Avatar>
                 <Box sx={{ flex: 1, minWidth: 0 }}>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
                     <Typography

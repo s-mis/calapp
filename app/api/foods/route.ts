@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
   const limit = Math.min(Math.max(parseInt(searchParams.get('limit') || '50', 10) || 50, 1), 200);
   const offset = Math.max(parseInt(searchParams.get('offset') || '0', 10) || 0, 0);
 
-  let query = supabase.from('foods').select('*, serving_sizes(*)', { count: 'exact' });
+  let query = supabase.from('foods').select('id, name, brand, unit, calories, protein, carbs, fat, fiber, sugar, barcode, created_at, serving_sizes(*)', { count: 'exact' });
 
   if (barcode) {
     query = query.eq('barcode', barcode);
