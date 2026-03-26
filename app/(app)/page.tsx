@@ -645,53 +645,56 @@ export default function DashboardPage() {
       {/* Weight Summary Card */}
       {recentWeights.length > 0 && (() => {
         const todayWeight = recentWeights.find(w => w.date === today());
+        const sortedWeights = [...recentWeights].sort((a, b) => a.date.localeCompare(b.date));
+        const weightChartData = sortedWeights.map(w => {
+          const d = new Date(w.date + 'T00:00:00');
+          return {
+            date: w.date,
+            label: `${d.getMonth() + 1}/${d.getDate()}`,
+            weight: w.weight,
+          };
+        });
+        const trend = sortedWeights.length >= 2
+          ? sortedWeights[sortedWeights.length - 1].weight - sortedWeights[0].weight
+          : null;
+        const trendColor = trend === null ? '#E040FB' : Math.abs(trend) < 0.5 ? '#39FF14' : trend > 0 ? '#FF1744' : '#FFD600';
+
         return (
           <Card sx={{ mb: 2 }}>
             <CardContent sx={{ py: 2, '&:last-child': { pb: 2 } }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
                 <MonitorWeightIcon sx={{ color: '#E040FB', fontSize: 20 }} />
-                <Typography variant="subtitle2">Weight</Typography>
+                <Typography variant="subtitle2" sx={{ flex: 1 }}>Weight</Typography>
+                {trend !== null && (
+                  <Typography variant="caption" sx={{ color: trendColor, fontWeight: 600 }}>
+                    {trend > 0 ? '▲' : trend < 0 ? '▼' : '→'} {Math.abs(trend).toFixed(1)} {weightUnit}
+                  </Typography>
+                )}
               </Box>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1.5 }}>
                 <Box sx={{ textAlign: 'center', minWidth: 80 }}>
                   {todayWeight ? (
                     <>
-                      <Typography variant="h5" fontWeight="bold" sx={{ color: '#E040FB' }}>
+                      <Typography variant="h4" fontWeight="bold" sx={{ color: '#E040FB', lineHeight: 1 }}>
                         {todayWeight.weight}
                       </Typography>
-                      <Typography variant="caption" color="text.secondary">{weightUnit}</Typography>
+                      <Typography variant="caption" color="text.secondary">{weightUnit} today</Typography>
                     </>
                   ) : (
-                    <Typography variant="body2" color="text.secondary">Not logged today</Typography>
+                    <Box sx={{ textAlign: 'center' }}>
+                      <Typography variant="body2" color="text.secondary">No entry</Typography>
+                      <Typography variant="caption" color="text.secondary">today</Typography>
+                    </Box>
                   )}
                 </Box>
-
-                {recentWeights.length >= 2 && (
-                  <Box sx={{ flex: 1 }}>
-                    <ResponsiveContainer width="100%" height={60}>
-                      <LineChart data={recentWeights}>
-                        <Line
-                          type="monotone"
-                          dataKey="weight"
-                          stroke="#E040FB"
-                          strokeWidth={1.5}
-                          dot={false}
-                        />
-                        {weightGoal && (
-                          <ReferenceLine y={weightGoal} stroke="#39FF14" strokeDasharray="3 3" />
-                        )}
-                        <YAxis domain={['auto', 'auto']} hide />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </Box>
-                )}
 
                 {weightGoal && todayWeight && (() => {
                   const diff = todayWeight.weight - weightGoal;
                   const color = Math.abs(diff) < 1 ? '#39FF14' : diff > 0 ? '#FF1744' : '#FFD600';
                   return (
                     <Box sx={{ textAlign: 'center', minWidth: 70 }}>
-                      <Typography variant="body2" fontWeight="bold" sx={{ color }}>
+                      <Typography variant="h6" fontWeight="bold" sx={{ color, lineHeight: 1 }}>
                         {diff > 0 ? '+' : ''}{diff.toFixed(1)}
                       </Typography>
                       <Typography variant="caption" color="text.secondary">from goal</Typography>
@@ -699,6 +702,55 @@ export default function DashboardPage() {
                   );
                 })()}
               </Box>
+
+              {sortedWeights.length >= 2 && (
+                <ResponsiveContainer width="100%" height={130}>
+                  <LineChart data={weightChartData} margin={{ top: 8, right: 8, left: -20, bottom: 0 }}>
+                    <XAxis
+                      dataKey="label"
+                      tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 10 }}
+                      axisLine={false}
+                      tickLine={false}
+                      interval="preserveStartEnd"
+                    />
+                    <YAxis
+                      domain={['auto', 'auto']}
+                      tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 10 }}
+                      axisLine={false}
+                      tickLine={false}
+                      width={40}
+                    />
+                    <Tooltip
+                      content={({ active, payload }) => {
+                        if (!active || !payload?.length) return null;
+                        const d = payload[0].payload;
+                        return (
+                          <Box sx={{ bgcolor: 'rgba(13,13,13,0.95)', border: '1px solid rgba(224,64,251,0.3)', borderRadius: 1, p: 1 }}>
+                            <Typography variant="caption" sx={{ color: '#E040FB', display: 'block' }}>{d.date}</Typography>
+                            <Typography variant="body2" fontWeight={600}>{d.weight} {weightUnit}</Typography>
+                          </Box>
+                        );
+                      }}
+                    />
+                    {weightGoal && (
+                      <ReferenceLine
+                        y={weightGoal}
+                        stroke="#39FF14"
+                        strokeDasharray="4 4"
+                        label={{ value: `Goal ${weightGoal}`, position: 'insideTopRight', fontSize: 10, fill: '#39FF14' }}
+                      />
+                    )}
+                    <Line
+                      type="monotone"
+                      dataKey="weight"
+                      stroke="#E040FB"
+                      strokeWidth={2}
+                      dot={{ fill: '#E040FB', r: 3, strokeWidth: 0 }}
+                      activeDot={{ r: 5, fill: '#E040FB', stroke: 'rgba(224,64,251,0.4)', strokeWidth: 4 }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
             </CardContent>
           </Card>
         );

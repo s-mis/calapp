@@ -28,6 +28,13 @@ import CardContent from '@mui/material/CardContent';
 import MonitorWeightIcon from '@mui/icons-material/MonitorWeight';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import Checkbox from '@mui/material/Checkbox';
+import List from '@mui/material/List';
+import ListItem from '@mui/material/ListItem';
+import ListItemButton from '@mui/material/ListItemButton';
+import ListItemText from '@mui/material/ListItemText';
+import ListItemIcon from '@mui/material/ListItemIcon';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import { getLogs, getFoods, createLog, deleteLog, updateLog, createFood, getRecentFoods, getWeightLogs, createWeightLog, getSettings } from '@/services/api';
 import { FoodLogWithFood, Food, MealType, ServingSize, QUICK_ADD_BRAND, WeightLog } from '@/types';
 import FoodLogEntry from '@/components/FoodLogEntry';
@@ -112,6 +119,13 @@ export default function FoodLogPage() {
   const [quickProtein, setQuickProtein] = useState('');
   const [quickCarbs, setQuickCarbs] = useState('');
   const [quickFat, setQuickFat] = useState('');
+
+  // Copy from yesterday state
+  const [copyDialogOpen, setCopyDialogOpen] = useState(false);
+  const [yesterdayLogs, setYesterdayLogs] = useState<FoodLogWithFood[]>([]);
+  const [copyLoading, setCopyLoading] = useState(false);
+  const [selectedCopyIds, setSelectedCopyIds] = useState<Set<number>>(new Set());
+  const [copySaving, setCopySaving] = useState(false);
 
   // Swipe date navigation
   const swipeRef = useRef<{ startX: number; startY: number } | null>(null);
@@ -411,6 +425,49 @@ export default function FoodLogPage() {
     setDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
   };
 
+  const getYesterdayDate = (fromDate: string) => {
+    const d = new Date(fromDate + 'T00:00:00');
+    d.setDate(d.getDate() - 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+
+  const openCopyDialog = async () => {
+    setCopyLoading(true);
+    setCopyDialogOpen(true);
+    try {
+      const yDate = getYesterdayDate(date);
+      const data = await getLogs(yDate);
+      setYesterdayLogs(data);
+      setSelectedCopyIds(new Set(data.map(l => l.id)));
+    } finally {
+      setCopyLoading(false);
+    }
+  };
+
+  const handleCopyConfirm = async () => {
+    if (copySaving) return;
+    setCopySaving(true);
+    try {
+      const selected = yesterdayLogs.filter(l => selectedCopyIds.has(l.id));
+      await Promise.all(selected.map(entry => createLog({
+        food_id: entry.food_id,
+        date,
+        meal_type: entry.meal_type,
+        serving_size_id: entry.serving_size_id ?? null,
+        quantity: entry.quantity,
+        custom_grams: entry.custom_grams ?? null,
+        cal_override: entry.cal_override ?? null,
+        protein_override: entry.protein_override ?? null,
+        carbs_override: entry.carbs_override ?? null,
+        fat_override: entry.fat_override ?? null,
+      })));
+      setCopyDialogOpen(false);
+      loadLogs();
+    } finally {
+      setCopySaving(false);
+    }
+  };
+
   const grouped = mealTypes.map(mt => ({
     ...mt,
     entries: logs.filter(l => l.meal_type === mt.value),
@@ -456,6 +513,9 @@ export default function FoodLogPage() {
             <TodayIcon fontSize="small" />
           </IconButton>
         )}
+        <IconButton size="small" onClick={openCopyDialog} title="Copy from yesterday" sx={{ color: '#E040FB' }}>
+          <ContentCopyIcon fontSize="small" />
+        </IconButton>
       </Box>
 
       {/* Weight Entry Card */}
@@ -578,6 +638,88 @@ export default function FoodLogPage() {
         onClose={() => setSnackbar(null)}
         message={snackbar}
       />
+
+      {/* Copy from Yesterday Dialog */}
+      <Dialog open={copyDialogOpen} onClose={() => setCopyDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Copy from Yesterday</DialogTitle>
+        <DialogContent sx={{ p: 0 }}>
+          {copyLoading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+              <CircularProgress />
+            </Box>
+          ) : yesterdayLogs.length === 0 ? (
+            <Typography color="text.secondary" sx={{ px: 3, py: 3, textAlign: 'center' }}>
+              No entries logged yesterday.
+            </Typography>
+          ) : (
+            <>
+              <Box sx={{ px: 2, pt: 1, pb: 0.5, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Typography variant="caption" color="text.secondary">
+                  {selectedCopyIds.size} of {yesterdayLogs.length} selected
+                </Typography>
+                <Button size="small" onClick={() => {
+                  if (selectedCopyIds.size === yesterdayLogs.length) {
+                    setSelectedCopyIds(new Set());
+                  } else {
+                    setSelectedCopyIds(new Set(yesterdayLogs.map(l => l.id)));
+                  }
+                }}>
+                  {selectedCopyIds.size === yesterdayLogs.length ? 'Deselect all' : 'Select all'}
+                </Button>
+              </Box>
+              <List dense disablePadding>
+                {yesterdayLogs.map(entry => {
+                  const cal = entry.cal_override != null
+                    ? entry.cal_override
+                    : (() => {
+                        const g = (entry.serving_size?.grams ?? entry.custom_grams ?? 0) * entry.quantity;
+                        return (entry.food.calories ?? 0) * g / 100;
+                      })();
+                  return (
+                    <ListItem key={entry.id} disablePadding sx={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                      <ListItemButton
+                        onClick={() => setSelectedCopyIds(prev => {
+                          const next = new Set(prev);
+                          if (next.has(entry.id)) next.delete(entry.id);
+                          else next.add(entry.id);
+                          return next;
+                        })}
+                        dense
+                      >
+                        <ListItemIcon sx={{ minWidth: 36 }}>
+                          <Checkbox
+                            edge="start"
+                            checked={selectedCopyIds.has(entry.id)}
+                            size="small"
+                            disableRipple
+                            sx={{ p: 0 }}
+                          />
+                        </ListItemIcon>
+                        <ListItemText
+                          primary={entry.food.name + (entry.food.brand ? ` (${entry.food.brand})` : '')}
+                          secondary={`${entry.meal_type} · ${Math.round(cal)} kcal`}
+                          primaryTypographyProps={{ variant: 'body2' }}
+                          secondaryTypographyProps={{ variant: 'caption' }}
+                        />
+                      </ListItemButton>
+                    </ListItem>
+                  );
+                })}
+              </List>
+            </>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setCopyDialogOpen(false)}>Cancel</Button>
+          <Button
+            variant="contained"
+            onClick={handleCopyConfirm}
+            disabled={selectedCopyIds.size === 0 || copySaving || copyLoading}
+          >
+            {copySaving ? 'Copying…' : `Copy ${selectedCopyIds.size} item${selectedCopyIds.size !== 1 ? 's' : ''}`}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>Log Food</DialogTitle>
